@@ -189,7 +189,7 @@ async function checkout() {
         <USeparator class="my-4" />
 
         <UButton
-          label="Proceed to checkout"
+          label="Proceed to payment"
           icon="i-lucide-lock"
           color="primary"
           size="lg"
@@ -205,7 +205,18 @@ async function checkout() {
 
         <RequestFreeModal
           :books="lines.map(l => l.book)"
-          trigger-label="Request these for free"
+          trigger-label="Request free order"
+        />
+
+        <UButton
+          to="/donate"
+          label="Donate"
+          icon="i-lucide-heart"
+          color="neutral"
+          variant="ghost"
+          size="lg"
+          block
+          class="mt-3"
         />
 
         <p class="mt-3 text-center text-xs text-muted">
