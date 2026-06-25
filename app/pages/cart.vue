@@ -208,17 +208,6 @@ async function checkout() {
           trigger-label="Request free order"
         />
 
-        <UButton
-          to="/donate"
-          label="Donate"
-          icon="i-lucide-heart"
-          color="neutral"
-          variant="ghost"
-          size="lg"
-          block
-          class="mt-3"
-        />
-
         <p class="mt-3 text-center text-xs text-muted">
           Secure payment by Stripe, or ask the community to sponsor your copy. Books are printed on demand and shipped at cost.
         </p>
