@@ -44,12 +44,15 @@ export default defineNuxtConfig({
 
   compatibilityDate: '2025-01-15',
 
-  // File-backed datastore for pay-it-forward book requests. Swap the driver
-  // (e.g. for Postgres/SQLite/KV) without touching the server/utils/requests.ts
-  // interface.
+  // Datastore for pay-it-forward book requests. On Netlify the filesystem is
+  // ephemeral/read-only, so use Netlify Blobs there; everything else (local
+  // dev, `nuxt preview`) uses a file driver. Swap drivers without touching the
+  // server/utils/requests.ts interface.
   nitro: {
     storage: {
-      db: { driver: 'fs', base: './.data/db' }
+      db: process.env.NETLIFY
+        ? { driver: 'netlifyBlobs', name: 'db' }
+        : { driver: 'fs', base: './.data/db' }
     },
     devStorage: {
       db: { driver: 'fs', base: './.data/db' }

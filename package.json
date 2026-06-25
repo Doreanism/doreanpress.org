@@ -13,6 +13,7 @@
   "dependencies": {
     "@iconify-json/lucide": "^1.2.114",
     "@iconify-json/simple-icons": "^1.2.86",
+    "@netlify/blobs": "^10.7.9",
     "@nuxt/content": "^3.14.0",
     "@nuxt/ui": "^4.9.0",
     "nuxt": "^4.4.8",
