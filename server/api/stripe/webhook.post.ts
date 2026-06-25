@@ -109,6 +109,18 @@ async function fulfillSponsorship(session: Stripe.Checkout.Session) {
       fulfilledAt: new Date().toISOString()
     })
     console.info(`[sponsorship] request ${requestId} fulfilled via Lulu job ${jobId} (mock=${isLuluMocked()}).`)
+
+    // Close the loop: tell the requester their copy is coming, thank the sponsor.
+    await sendEmail(requestFulfilledEmail({
+      to: request.email,
+      name: request.name,
+      bookTitle: book.title,
+      city: request.address.city
+    }))
+    const sponsorEmail = session.customer_details?.email
+    if (sponsorEmail) {
+      await sendEmail(sponsorThankYouEmail({ to: sponsorEmail, bookTitle: book.title }))
+    }
   } catch (err) {
     console.error(`[sponsorship] FAILED to fulfil request ${requestId} for session ${session.id}:`, err)
   }

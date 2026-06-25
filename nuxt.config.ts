@@ -25,6 +25,12 @@ export default defineNuxtConfig({
       // mocked responses so the site works without real keys.
       mock: 'true'
     },
+    // Transactional email (Resend). When the key is missing, emails are logged
+    // to the console instead of sent (mock mode).
+    resendApiKey: '',
+    fromEmail: 'Dorean Press <hello@doreanpress.org>',
+    // Optional: notify the press when a new request is posted.
+    pressEmail: '',
     public: {
       siteUrl: 'http://localhost:3000',
       stripePublishableKey: ''

@@ -59,7 +59,7 @@ export const catalog: Book[] = [
     format: 'Paperback · 6×9 · 220 pages',
     dimensions: '6 x 9 x .50 inches',
     weightOz: 12.8,
-    priceCents: 1200,
+    priceCents: 19000000,
     currency: 'usd',
     cover: '/covers/the-dorean-principle.svg',
     tagline: 'Reclaiming the conviction that the gospel is freely given.',

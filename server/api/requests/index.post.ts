@@ -66,5 +66,12 @@ export default defineEventHandler(async (event) => {
     address
   })
 
+  // Confirm to the requester, and (optionally) notify the press.
+  await sendEmail(requestConfirmationEmail({ to: email, name, bookTitle: book.title }))
+  const press = pressEmailAddress()
+  if (press) {
+    await sendEmail(pressNewRequestEmail({ to: press, name, bookTitle: book.title, message }))
+  }
+
   return { id: record.id, status: record.status }
 })
