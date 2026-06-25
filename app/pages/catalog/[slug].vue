@@ -37,6 +37,9 @@ const details = computed(() => {
   return [
     { label: 'Author', value: b.author },
     { label: 'Format', value: b.format },
+    { label: 'Pages', value: String(b.lulu.pageCount) },
+    { label: 'Dimensions', value: b.dimensions },
+    { label: 'Weight', value: `${b.weightOz} ounces` },
     b.year ? { label: 'Published', value: String(b.year) } : null,
     b.isbn ? { label: 'ISBN', value: b.isbn } : null
   ].filter(Boolean) as { label: string, value: string }[]
@@ -91,13 +94,6 @@ const details = computed(() => {
               @click="addToCart"
             />
           </div>
-
-          <USeparator
-            label="can’t pay?"
-            class="my-4"
-          />
-
-          <RequestFreeModal :book="book" />
 
           <UButton
             v-if="book.freePdfUrl"

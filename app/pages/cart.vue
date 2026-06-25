@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { formatPrice } from '#shared/catalog'
+import { formatPrice, formatPounds } from '#shared/catalog'
 
-const { lines, items, subtotalCents, isEmpty, setQuantity, remove } = useCart()
+const { lines, items, subtotalCents, totalWeightOz, isEmpty, setQuantity, remove } = useCart()
 const toast = useToast()
 const loading = ref(false)
 
@@ -81,7 +81,7 @@ async function checkout() {
             >
           </NuxtLink>
 
-          <div class="flex flex-1 flex-col justify-between">
+          <div class="flex flex-1 flex-col justify-between gap-4">
             <div>
               <NuxtLink
                 :to="`/catalog/${line.slug}`"
@@ -92,28 +92,58 @@ async function checkout() {
               <p class="text-sm text-muted">
                 {{ line.book.author }}
               </p>
-              <p class="mt-1 text-sm text-toned">
-                {{ formatPrice(line.book.priceCents, line.book.currency) }} each
-              </p>
+
+              <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                <dt class="font-medium text-muted">
+                  pages
+                </dt>
+                <dd class="text-toned">
+                  {{ line.book.lulu.pageCount }}
+                </dd>
+                <dt class="font-medium text-muted">
+                  dimensions
+                </dt>
+                <dd class="text-toned">
+                  {{ line.book.dimensions }}
+                </dd>
+                <dt class="font-medium text-muted">
+                  weight
+                </dt>
+                <dd class="text-toned">
+                  {{ line.book.weightOz }} ounces
+                </dd>
+                <dt class="font-medium text-muted">
+                  price
+                </dt>
+                <dd class="text-toned">
+                  {{ formatPrice(line.book.priceCents, line.book.currency) }}
+                </dd>
+              </dl>
             </div>
 
-            <div class="flex items-center gap-3">
-              <UInputNumber
-                :model-value="line.quantity"
-                :min="1"
-                :max="99"
-                size="sm"
-                class="w-24"
-                @update:model-value="(v: number) => setQuantity(line.slug, v)"
-              />
-              <UButton
-                icon="i-lucide-trash-2"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                aria-label="Remove"
-                @click="remove(line.slug)"
-              />
+            <div class="flex flex-col gap-2">
+              <div class="flex items-center gap-3">
+                <UInputNumber
+                  :model-value="line.quantity"
+                  :min="1"
+                  :max="99"
+                  size="sm"
+                  class="w-24"
+                  @update:model-value="(v: number) => setQuantity(line.slug, v)"
+                />
+                <UButton
+                  icon="i-lucide-trash-2"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Remove"
+                  @click="remove(line.slug)"
+                />
+              </div>
+              <p class="text-sm">
+                <span class="font-medium text-muted">total weight</span>
+                <span class="ml-3 text-toned">{{ formatPounds(line.lineWeightOz) }}</span>
+              </p>
             </div>
           </div>
 
@@ -140,6 +170,14 @@ async function checkout() {
           </div>
           <div class="flex justify-between">
             <dt class="text-muted">
+              Total weight
+            </dt>
+            <dd class="text-highlighted">
+              {{ formatPounds(totalWeightOz) }}
+            </dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-muted">
               Shipping
             </dt>
             <dd class="text-muted">
@@ -160,8 +198,18 @@ async function checkout() {
           @click="checkout"
         />
 
+        <USeparator
+          label="can’t pay?"
+          class="my-4"
+        />
+
+        <RequestFreeModal
+          :books="lines.map(l => l.book)"
+          trigger-label="Request these for free"
+        />
+
         <p class="mt-3 text-center text-xs text-muted">
-          Secure payment by Stripe. Books are printed on demand and shipped at cost.
+          Secure payment by Stripe, or ask the community to sponsor your copy. Books are printed on demand and shipped at cost.
         </p>
       </div>
     </div>

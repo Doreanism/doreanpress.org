@@ -8,6 +8,8 @@ export interface CartItem {
 export interface CartLine extends CartItem {
   book: Book
   lineTotalCents: number
+  /** Combined shipping weight of this line, in ounces. */
+  lineWeightOz: number
 }
 
 const STORAGE_KEY = 'dorean-cart'
@@ -39,13 +41,15 @@ export function useCart() {
         return {
           ...item,
           book,
-          lineTotalCents: book.priceCents * item.quantity
+          lineTotalCents: book.priceCents * item.quantity,
+          lineWeightOz: book.weightOz * item.quantity
         }
       })
       .filter((l): l is CartLine => l !== null))
 
   const count = computed(() => items.value.reduce((n, i) => n + i.quantity, 0))
   const subtotalCents = computed(() => lines.value.reduce((n, l) => n + l.lineTotalCents, 0))
+  const totalWeightOz = computed(() => lines.value.reduce((n, l) => n + l.lineWeightOz, 0))
   const isEmpty = computed(() => count.value === 0)
 
   function add(slug: string, quantity = 1) {
@@ -78,6 +82,7 @@ export function useCart() {
     lines,
     count,
     subtotalCents,
+    totalWeightOz,
     isEmpty,
     add,
     setQuantity,

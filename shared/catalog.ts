@@ -29,6 +29,10 @@ export interface Book {
   isbn?: string
   /** Human-readable format line, e.g. 'Paperback · 6×9 · 184 pages'. */
   format: string
+  /** Trim size incl. spine thickness, e.g. '5.5 x 8.5 x .45 inches'. */
+  dimensions: string
+  /** Shipping weight of a single copy, in ounces. */
+  weightOz: number
   /** Retail price the customer pays, per copy, in the smallest currency unit. */
   priceCents: number
   currency: 'usd'
@@ -53,6 +57,8 @@ export const catalog: Book[] = [
     year: 2021,
     isbn: '978-1-styled-sample',
     format: 'Paperback · 6×9 · 220 pages',
+    dimensions: '6 x 9 x .50 inches',
+    weightOz: 12.8,
     priceCents: 1200,
     currency: 'usd',
     cover: '/covers/the-dorean-principle.svg',
@@ -78,6 +84,8 @@ export const catalog: Book[] = [
     author: 'Dorean Press (ed.)',
     year: 2023,
     format: 'Paperback · 6×9 · 168 pages',
+    dimensions: '6 x 9 x .38 inches',
+    weightOz: 9.8,
     priceCents: 1000,
     currency: 'usd',
     cover: '/covers/freely-you-have-received.svg',
@@ -101,6 +109,8 @@ export const catalog: Book[] = [
     author: 'A. Sample Author',
     year: 2024,
     format: 'Paperback · 5.5×8.5 · 256 pages',
+    dimensions: '5.5 x 8.5 x .58 inches',
+    weightOz: 12.6,
     priceCents: 1400,
     currency: 'usd',
     cover: '/covers/merchants-in-the-temple.svg',
@@ -124,6 +134,8 @@ export const catalog: Book[] = [
     author: 'A. Sample Author',
     year: 2025,
     format: 'Paperback · 5×8 · 120 pages',
+    dimensions: '5 x 8 x .27 inches',
+    weightOz: 5.4,
     priceCents: 900,
     currency: 'usd',
     cover: '/covers/colaborers.svg',
@@ -150,4 +162,9 @@ export function formatPrice(cents: number, currency: string = 'usd'): string {
     style: 'currency',
     currency: currency.toUpperCase()
   }).format(cents / 100)
+}
+
+/** Render a total weight (in ounces) as pounds, e.g. '6.39 pounds'. */
+export function formatPounds(totalOz: number): string {
+  return `${(totalOz / 16).toFixed(2)} pounds`
 }

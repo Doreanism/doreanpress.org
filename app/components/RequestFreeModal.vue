@@ -1,11 +1,26 @@
 <script setup lang="ts">
 import type { Book } from '#shared/catalog'
 
-const props = defineProps<{ book: Book }>()
+const props = withDefaults(defineProps<{
+  books: Book[]
+  triggerLabel?: string
+  disabled?: boolean
+}>(), {
+  triggerLabel: 'Request a free copy',
+  disabled: false
+})
 
 const open = ref(false)
 const loading = ref(false)
 const toast = useToast()
+
+const titles = computed(() => props.books.map(b => b.title))
+const summary = computed(() => {
+  if (titles.value.length === 0) return ''
+  if (titles.value.length === 1) return `“${titles.value[0]}”`
+  if (titles.value.length === 2) return `“${titles.value[0]}” and “${titles.value[1]}”`
+  return `${titles.value.length} books from your cart`
+})
 
 const form = reactive({
   message: '',
@@ -28,28 +43,32 @@ function reset() {
 }
 
 async function submit() {
+  if (props.books.length === 0) return
   loading.value = true
   try {
-    await $fetch('/api/requests', {
+    const address = {
+      line1: form.line1,
+      line2: form.line2,
+      city: form.city,
+      state: form.state,
+      postalCode: form.postalCode,
+      country: form.country
+    }
+    // One request per distinct book, sharing the same message + address.
+    await Promise.all(props.books.map(book => $fetch('/api/requests', {
       method: 'POST',
       body: {
-        bookSlug: props.book.slug,
+        bookSlug: book.slug,
         message: form.message,
         name: form.name,
         email: form.email,
         phone: form.phone,
-        address: {
-          line1: form.line1,
-          line2: form.line2,
-          city: form.city,
-          state: form.state,
-          postalCode: form.postalCode,
-          country: form.country
-        }
+        address
       }
-    })
+    })))
+
     toast.add({
-      title: 'Request submitted',
+      title: props.books.length > 1 ? 'Requests submitted' : 'Request submitted',
       description: 'Your request is now on the Give a Book board. We’ll email you when a sponsor sends your copy.',
       icon: 'i-lucide-heart-handshake',
       color: 'primary'
@@ -69,11 +88,12 @@ async function submit() {
   <UModal
     v-model:open="open"
     title="Request a free copy"
-    :description="`Tell us why you’d like “${book.title}”. Your message appears on the Give a Book board so a sponsor can send you a copy. Your contact and address stay private.`"
+    :description="`Tell us why you’d like ${summary}. Your message appears on the Give a Book board so a sponsor can send you a copy. Your contact and address stay private.`"
     :ui="{ content: 'max-w-xl' }"
   >
     <UButton
-      label="Request a free copy"
+      :label="triggerLabel"
+      :disabled="disabled || books.length === 0"
       icon="i-lucide-gift"
       color="neutral"
       variant="subtle"
