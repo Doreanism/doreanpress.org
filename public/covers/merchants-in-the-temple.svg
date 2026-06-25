@@ -1,0 +1,14 @@
+<svg viewBox="0 0 400 600" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="600" fill="#3b1d22"/>
+  <rect x="16" y="16" width="368" height="568" fill="none" stroke="#ffffff22" stroke-width="1"/>
+  <g transform="translate(200 110)">
+    <path d="M0 -34c10 13 14 23 14 32 0 9-6 16-14 18-8-2-14-9-14-18 0-9 4-19 14-32Z" fill="#fca5a5"/>
+  </g>
+  <text x="200" y="228" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="38" font-weight="600" fill="#fbfaf8">Merchants in the</text>
+  <text x="200" y="274" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="38" font-weight="600" fill="#fbfaf8">Temple?</text>
+  <text x="200" y="326" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="16" font-style="italic" fill="#fbfaf8bb">The Commercialization of the</text>
+  <text x="200" y="350" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="16" font-style="italic" fill="#fbfaf8bb">Church, Past and Present</text>
+  <line x1="150" y1="388" x2="250" y2="388" stroke="#fca5a5" stroke-width="1.5"/>
+  <text x="200" y="426" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="19" fill="#fbfaf8">A. Sample Author</text>
+  <text x="200" y="558" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="13" letter-spacing="3" fill="#fbfaf899">DOREAN PRESS</text>
+</svg>
