@@ -66,8 +66,14 @@ export default defineEventHandler(async (event) => {
     address
   })
 
-  // Confirm to the requester, and (optionally) notify the press.
-  await sendEmail(requestConfirmationEmail({ to: email, name, bookTitle: book.title }))
+  // Confirm to the requester, and (optionally) notify the press. The withdraw
+  // link lets them pull their own posting (the request id is the capability).
+  // Prefer the actual request origin so the link works on whatever host/port
+  // the app is really served from (dev may shift off 3000); fall back to config.
+  const configured = useRuntimeConfig(event).public.siteUrl.replace(/\/$/, '')
+  const origin = getRequestURL(event).origin || configured
+  const withdrawUrl = `${origin}/give/withdraw?id=${record.id}`
+  await sendEmail(requestConfirmationEmail({ to: email, name, bookTitle: book.title, withdrawUrl }))
   const press = pressEmailAddress()
   if (press) {
     await sendEmail(pressNewRequestEmail({ to: press, name, bookTitle: book.title, message }))

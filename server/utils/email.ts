@@ -74,13 +74,18 @@ ${body}
 </div>`
 }
 
-export function requestConfirmationEmail(params: { to: string, name: string, bookTitle: string }): EmailMessage {
-  const { to, name, bookTitle } = params
+export function requestConfirmationEmail(params: { to: string, name: string, bookTitle: string, withdrawUrl?: string }): EmailMessage {
+  const { to, name, bookTitle, withdrawUrl } = params
   const text = `Hi ${name},
 
 Your request for "${bookTitle}" is now on the Dorean Press "Give a Book" board. When another reader chooses to sponsor it, we'll print a copy and ship it to you — and we'll email you the moment that happens.
 
-Thank you for letting the community give freely.
+Thank you for letting the community give freely.${withdrawUrl
+  ? `
+
+Changed your mind? You can remove your request here (before anyone sponsors it):
+${withdrawUrl}`
+  : ''}
 
 ${SIGNATURE}`
   return {
@@ -89,7 +94,10 @@ ${SIGNATURE}`
     text,
     html: layout(`<p>Hi ${name},</p>
 <p>Your request for <strong>“${bookTitle}”</strong> is now on the Dorean Press <em>Give a Book</em> board. When another reader chooses to sponsor it, we’ll print a copy and ship it to you — and we’ll email you the moment that happens.</p>
-<p>Thank you for letting the community give freely.</p>`)
+<p>Thank you for letting the community give freely.</p>${withdrawUrl
+  ? `
+<p style="font-size:14px;color:#78716c">Changed your mind? You can <a href="${withdrawUrl}" style="color:#78716c">remove your request</a> any time before someone sponsors it.</p>`
+  : ''}`)
   }
 }
 
@@ -109,6 +117,33 @@ ${SIGNATURE}`
     text,
     html: layout(`<p>Hi ${name},</p>
 <p>Good news — a reader has <strong>sponsored your copy</strong> of “${bookTitle}”. It’s being printed on demand and shipped${dest} now. Please allow some time for printing and delivery.</p>
+<p><em>Freely you have received; freely give.</em></p>`)
+  }
+}
+
+export function requestShippedEmail(params: { to: string, name: string, bookTitle: string, trackingUrl?: string }): EmailMessage {
+  const { to, name, bookTitle, trackingUrl } = params
+  const text = `Hi ${name},
+
+Your copy of "${bookTitle}" has shipped and is on its way to you.${trackingUrl
+  ? `
+
+Track your package here:
+${trackingUrl}`
+  : ''}
+
+Freely you have received; freely give.
+
+${SIGNATURE}`
+  return {
+    to,
+    subject: `Your copy of “${bookTitle}” has shipped`,
+    text,
+    html: layout(`<p>Hi ${name},</p>
+<p>Your copy of <strong>“${bookTitle}”</strong> has shipped and is on its way to you.</p>${trackingUrl
+  ? `
+<p><a href="${trackingUrl}">Track your package</a></p>`
+  : ''}
 <p><em>Freely you have received; freely give.</em></p>`)
   }
 }

@@ -118,15 +118,26 @@ function formatDate(iso: string) {
           “{{ req.message }}”
         </blockquote>
 
-        <UButton
-          :label="`Sponsor this copy · ${formatPrice(bookFor(req.bookSlug)?.priceCents ?? 0)}`"
-          icon="i-lucide-gift"
-          color="primary"
-          block
-          :loading="sponsoringId === req.id"
-          :disabled="!bookFor(req.bookSlug)"
-          @click="sponsor(req.id)"
-        />
+        <div class="flex flex-col gap-2">
+          <UButton
+            :label="`Sponsor this copy · ${formatPrice(bookFor(req.bookSlug)?.priceCents ?? 0)}`"
+            icon="i-lucide-gift"
+            color="primary"
+            block
+            :loading="sponsoringId === req.id"
+            :disabled="!bookFor(req.bookSlug)"
+            @click="sponsor(req.id)"
+          />
+          <UButton
+            :to="`/give/withdraw?id=${req.id}`"
+            label="This is my request — remove it"
+            icon="i-lucide-trash-2"
+            color="neutral"
+            variant="link"
+            size="xs"
+            block
+          />
+        </div>
       </div>
     </div>
   </UContainer>
