@@ -4,9 +4,11 @@
 // shipping details). Another visitor sponsors it; once paid + sent to Lulu the
 // request is marked fulfilled and drops off the public board.
 //
-// Backed by Nitro storage (file driver by default — see nuxt.config `nitro`).
-// The interface below is storage-agnostic: swap the driver for Postgres/KV
-// without changing call sites.
+// Persistence: Netlify DB (Neon Postgres). `neon()` reads NETLIFY_DATABASE_URL,
+// which Netlify injects in production and `netlify dev` injects locally — run
+// `netlify db init` once to provision it.
+
+import { neon } from '@netlify/neon'
 
 export type RequestStatus = 'open' | 'fulfilled'
 
@@ -47,10 +49,6 @@ export interface PublicBookRequest {
   createdAt: string
 }
 
-const PREFIX = 'requests'
-const keyFor = (id: string) => `${PREFIX}:${id}`
-const store = () => useStorage('db')
-
 export function toPublic(r: BookRequest): PublicBookRequest {
   return { id: r.id, bookSlug: r.bookSlug, message: r.message, createdAt: r.createdAt }
 }
@@ -64,6 +62,100 @@ export interface CreateRequestInput {
   address: RequestAddress
 }
 
+// Lazy so the app can boot without the env var; the first API call that needs
+// the database fails with an actionable message instead of a boot-time crash.
+type Sql = ReturnType<typeof neon>
+let _sql: Sql | null = null
+function db(): Sql {
+  if (!_sql) {
+    if (!process.env.NETLIFY_DATABASE_URL) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Database not configured',
+        message: 'NETLIFY_DATABASE_URL is not set. Run `netlify db init` once, then use `netlify dev` locally so the URL is injected.'
+      })
+    }
+    _sql = neon()
+  }
+  return _sql
+}
+
+// Timestamps are stored as ISO text and the address as jsonb, so a row maps
+// back to BookRequest losslessly with no Date/JSON coercion surprises.
+let schema: Promise<void> | null = null
+function ensureSchema() {
+  if (!schema) {
+    schema = db()`
+      CREATE TABLE IF NOT EXISTS book_requests (
+        id                text PRIMARY KEY,
+        book_slug         text NOT NULL,
+        message           text NOT NULL,
+        name              text NOT NULL,
+        email             text NOT NULL,
+        phone             text NOT NULL,
+        address           jsonb NOT NULL,
+        status            text NOT NULL DEFAULT 'open',
+        created_at        text NOT NULL,
+        sponsor_email     text,
+        stripe_session_id text,
+        lulu_job_id       text,
+        shipping_status   text,
+        fulfilled_at      text
+      )
+    `.then(() => undefined)
+  }
+  return schema
+}
+
+function fromRow(r: Record<string, unknown>): BookRequest {
+  return {
+    id: r.id as string,
+    bookSlug: r.book_slug as string,
+    message: r.message as string,
+    name: r.name as string,
+    email: r.email as string,
+    phone: r.phone as string,
+    address: r.address as RequestAddress,
+    status: r.status as RequestStatus,
+    createdAt: r.created_at as string,
+    sponsorEmail: (r.sponsor_email as string) ?? undefined,
+    stripeSessionId: (r.stripe_session_id as string) ?? undefined,
+    luluJobId: (r.lulu_job_id as string) ?? undefined,
+    shippingStatus: (r.shipping_status as string) ?? undefined,
+    fulfilledAt: (r.fulfilled_at as string) ?? undefined
+  }
+}
+
+// Full-row upsert, so create and update share one write path.
+async function upsert(r: BookRequest) {
+  await ensureSchema()
+  await db()`
+    INSERT INTO book_requests
+      (id, book_slug, message, name, email, phone, address, status, created_at,
+       sponsor_email, stripe_session_id, lulu_job_id, shipping_status, fulfilled_at)
+    VALUES
+      (${r.id}, ${r.bookSlug}, ${r.message}, ${r.name}, ${r.email}, ${r.phone},
+       ${JSON.stringify(r.address)}::jsonb, ${r.status}, ${r.createdAt},
+       ${r.sponsorEmail ?? null}, ${r.stripeSessionId ?? null},
+       ${r.luluJobId != null ? String(r.luluJobId) : null},
+       ${r.shippingStatus ?? null}, ${r.fulfilledAt ?? null})
+    ON CONFLICT (id) DO UPDATE SET
+      book_slug = EXCLUDED.book_slug,
+      message = EXCLUDED.message,
+      name = EXCLUDED.name,
+      email = EXCLUDED.email,
+      phone = EXCLUDED.phone,
+      address = EXCLUDED.address,
+      status = EXCLUDED.status,
+      created_at = EXCLUDED.created_at,
+      sponsor_email = EXCLUDED.sponsor_email,
+      stripe_session_id = EXCLUDED.stripe_session_id,
+      lulu_job_id = EXCLUDED.lulu_job_id,
+      shipping_status = EXCLUDED.shipping_status,
+      fulfilled_at = EXCLUDED.fulfilled_at
+  `
+}
+
 export async function createRequest(input: CreateRequestInput): Promise<BookRequest> {
   const record: BookRequest = {
     id: crypto.randomUUID(),
@@ -71,26 +163,39 @@ export async function createRequest(input: CreateRequestInput): Promise<BookRequ
     createdAt: new Date().toISOString(),
     ...input
   }
-  await store().setItem(keyFor(record.id), record)
+  await upsert(record)
   return record
 }
 
 export async function getRequest(id: string): Promise<BookRequest | null> {
-  return (await store().getItem<BookRequest>(keyFor(id))) || null
+  await ensureSchema()
+  const rows = await db()`SELECT * FROM book_requests WHERE id = ${id}`
+  return rows[0] ? fromRow(rows[0]) : null
 }
 
 export async function listOpenRequests(): Promise<BookRequest[]> {
-  const keys = await store().getKeys(PREFIX)
-  const items = await Promise.all(keys.map(k => store().getItem<BookRequest>(k)))
-  return items
-    .filter((r): r is BookRequest => !!r && r.status === 'open')
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  await ensureSchema()
+  const rows = await db()`
+    SELECT * FROM book_requests WHERE status = 'open' ORDER BY created_at DESC
+  `
+  return rows.map(fromRow)
+}
+
+export async function findRequestByLuluJobId(jobId: string | number): Promise<BookRequest | null> {
+  await ensureSchema()
+  const rows = await db()`SELECT * FROM book_requests WHERE lulu_job_id = ${String(jobId)}`
+  return rows[0] ? fromRow(rows[0]) : null
 }
 
 export async function updateRequest(id: string, patch: Partial<BookRequest>): Promise<BookRequest | null> {
   const current = await getRequest(id)
   if (!current) return null
   const next = { ...current, ...patch }
-  await store().setItem(keyFor(id), next)
+  await upsert(next)
   return next
+}
+
+export async function deleteRequest(id: string): Promise<void> {
+  await ensureSchema()
+  await db()`DELETE FROM book_requests WHERE id = ${id}`
 }
