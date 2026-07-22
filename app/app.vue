@@ -33,7 +33,9 @@ useSeoMeta({
 </script>
 
 <template>
-  <UApp>
+  <UApp :toaster="{ progress: false }">
+    <KonamiRunner />
+
     <UHeader>
       <template #left>
         <NuxtLink
@@ -47,6 +49,8 @@ useSeoMeta({
       <UNavigationMenu :items="nav" />
 
       <template #right>
+        <ThemePicker />
+
         <UColorModeButton />
 
         <UChip
@@ -81,17 +85,11 @@ useSeoMeta({
     <UFooter>
       <template #top>
         <UContainer class="py-8">
-          <div class="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div class="max-w-md space-y-1">
-              <AppLogo size="size-7" />
-              <p class="text-sm text-muted">
-                “Freely you have received; freely give.” — Matthew 10:8
-              </p>
-            </div>
-            <UNavigationMenu
-              :items="nav"
-              variant="link"
-            />
+          <div class="max-w-md space-y-1">
+            <AppLogo size="size-7" />
+            <p class="text-sm text-muted">
+              “Freely you have received; freely give.” — Matthew 10:8
+            </p>
           </div>
         </UContainer>
       </template>
@@ -100,16 +98,6 @@ useSeoMeta({
         <p class="text-sm text-muted">
           © {{ new Date().getFullYear() }} Dorean Press. Printed on demand, sold at cost.
         </p>
-      </template>
-
-      <template #right>
-        <UButton
-          to="/catalog"
-          label="Browse the catalog"
-          color="neutral"
-          variant="ghost"
-          trailing-icon="i-lucide-arrow-right"
-        />
       </template>
     </UFooter>
   </UApp>
