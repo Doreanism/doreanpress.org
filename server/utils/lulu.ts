@@ -8,6 +8,8 @@
 // realistic mock so the rest of the app (checkout, fulfilment) works end-to-end
 // without contacting Lulu.
 
+import { createHmac, timingSafeEqual } from 'node:crypto'
+
 export interface LuluShippingAddress {
   name: string
   street1: string
@@ -51,7 +53,7 @@ function resolveConfig(): LuluConfig {
   const cfg = useRuntimeConfig().lulu
   const clientKey = cfg.clientKey || ''
   const clientSecret = cfg.clientSecret || ''
-  const mock = cfg.mock === 'true' || cfg.mock === true || !clientKey || !clientSecret
+  const mock = String(cfg.mock) === 'true' || !clientKey || !clientSecret
   return {
     clientKey,
     clientSecret,
@@ -105,6 +107,24 @@ function buildLineItems(items: LuluLineItem[]) {
 
 export function isLuluMocked(): boolean {
   return resolveConfig().mock
+}
+
+/**
+ * Verify the `Lulu-HMAC-SHA256` header on a webhook delivery: a hex
+ * HMAC-SHA256 of the raw request body, keyed with the API client secret.
+ * Without a configured secret (mock mode) verification is skipped so the
+ * endpoint stays testable locally.
+ */
+export function verifyLuluWebhookSignature(rawBody: string, signature: string | undefined): boolean {
+  const cfg = resolveConfig()
+  if (!cfg.clientSecret) {
+    console.warn('[lulu webhook] no client secret configured — skipping signature verification (dev only).')
+    return true
+  }
+  if (!signature) return false
+  const expected = Buffer.from(createHmac('sha256', cfg.clientSecret).update(rawBody).digest('hex'))
+  const received = Buffer.from(signature.trim().toLowerCase())
+  return expected.length === received.length && timingSafeEqual(expected, received)
 }
 
 /**

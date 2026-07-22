@@ -53,6 +53,23 @@ Use the printed `whsec_…` as `NUXT_STRIPE_WEBHOOK_SECRET`. Fulfilment (Lulu pr
 job creation) happens in `server/api/stripe/webhook.post.ts` on
 `checkout.session.completed`.
 
+### Lulu webhook
+
+`server/api/lulu/webhook.post.ts` receives print-job status changes, writes
+them back to the sponsored request, and emails the requester a tracking link
+when the job hits `SHIPPED`. Deliveries are authenticated via the
+`Lulu-HMAC-SHA256` header (HMAC of the body, keyed with the client secret);
+verification is skipped when no secret is configured (mock/dev).
+
+Register the subscription once per environment:
+
+```bash
+curl -X POST "$NUXT_LULU_BASE_URL/webhooks/" \
+  -H "Authorization: Bearer $LULU_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"topics": ["PRINT_JOB_STATUS_CHANGED"], "url": "https://doreanpress.org/api/lulu/webhook"}'
+```
+
 ## Architecture
 
 ```
@@ -65,6 +82,7 @@ server/utils/requests.ts       Pay-it-forward datastore (Nitro fs storage)
 server/api/checkout.post.ts    Create Stripe Checkout session (server-priced)
 server/api/requests/*          Create / list / sponsor book requests
 server/api/stripe/webhook.post Fulfil orders + sponsorships via Lulu
+server/api/lulu/webhook.post   Track print-job status; email tracking on SHIPPED
 ```
 
 To replace the file-backed datastore with a real database, swap the Nitro
@@ -75,5 +93,5 @@ stays the same.
 
 - Replace the sample catalog entries + covers, and point each book's
   `interiorPdfUrl` / `coverPdfUrl` / `podPackageId` at real print-ready files.
-- Add real Stripe + Lulu credentials and register the production webhook.
-- Consider Lulu shipping webhooks to track real shipment status.
+- Add real Stripe + Lulu credentials and register the production webhooks
+  (Stripe → `/api/stripe/webhook`, Lulu → `/api/lulu/webhook`).
