@@ -12,7 +12,6 @@ const toast = useToast()
 
 const id = computed(() => String(route.query.id || ''))
 const removing = ref(false)
-const confirming = ref(false)
 
 // Look up the request so the reader can confirm it's theirs before removing it.
 const { data: request, error } = await useFetch<PublicBookRequest>(
@@ -27,7 +26,6 @@ async function withdraw() {
   removing.value = true
   try {
     await $fetch(`/api/requests/${id.value}`, { method: 'DELETE' })
-    confirming.value = false
     await navigateTo('/give')
     toast.add({
       title: 'Book request deleted',
@@ -113,7 +111,8 @@ async function withdraw() {
             label="Remove my request"
             icon="i-lucide-trash-2"
             color="error"
-            @click="confirming = true"
+            :loading="removing"
+            @click="withdraw"
           />
           <UButton
             to="/give"
@@ -124,52 +123,5 @@ async function withdraw() {
         </div>
       </div>
     </div>
-
-    <!-- Last check before the request is deleted for good -->
-    <UModal
-      v-model:open="confirming"
-      :ui="{ content: 'max-w-md', header: 'hidden' }"
-    >
-      <template #body>
-        <div class="flex flex-col items-center gap-5 px-4 py-6 text-center">
-          <UIcon
-            name="i-lucide-trash-2"
-            class="size-12 text-error"
-          />
-          <div class="space-y-2">
-            <p class="font-display text-xl font-semibold text-highlighted">
-              Delete this request?
-            </p>
-            <p class="text-toned">
-              <template v-if="book">
-                “{{ book.title }}” comes off the <em>Give a Book</em> board and
-                sponsors will no longer see it.
-              </template>
-              <template v-else>
-                It comes off the <em>Give a Book</em> board and sponsors will no
-                longer see it.
-              </template>
-              You can always ask again.
-            </p>
-          </div>
-          <div class="flex flex-wrap justify-center gap-3">
-            <UButton
-              label="Yes, delete it"
-              icon="i-lucide-trash-2"
-              color="error"
-              :loading="removing"
-              @click="withdraw"
-            />
-            <UButton
-              label="Cancel"
-              color="neutral"
-              variant="subtle"
-              :disabled="removing"
-              @click="confirming = false"
-            />
-          </div>
-        </div>
-      </template>
-    </UModal>
   </UContainer>
 </template>
