@@ -12,7 +12,7 @@ const toast = useToast()
 
 const id = computed(() => String(route.query.id || ''))
 const removing = ref(false)
-const removed = ref(false)
+const confirming = ref(false)
 
 // Look up the request so the reader can confirm it's theirs before removing it.
 const { data: request, error } = await useFetch<PublicBookRequest>(
@@ -27,10 +27,11 @@ async function withdraw() {
   removing.value = true
   try {
     await $fetch(`/api/requests/${id.value}`, { method: 'DELETE' })
-    removed.value = true
+    confirming.value = false
+    await navigateTo('/give')
     toast.add({
-      title: 'Request removed',
-      description: 'Your request is no longer on the Give a Book board.',
+      title: 'Book request deleted',
+      description: 'It’s off the Give a Book board.',
       icon: 'i-lucide-check',
       color: 'primary'
     })
@@ -52,30 +53,9 @@ async function withdraw() {
     />
 
     <div class="mt-10 max-w-xl">
-      <!-- Already removed -->
-      <div
-        v-if="removed"
-        class="flex flex-col items-start gap-4 rounded-lg ring ring-default bg-default p-6"
-      >
-        <UIcon
-          name="i-lucide-check-circle"
-          class="size-10 text-primary"
-        />
-        <p class="text-toned">
-          Your request has been taken off the board. Thank you — and you’re always
-          welcome to ask again.
-        </p>
-        <UButton
-          to="/give"
-          label="Back to Give a Book"
-          color="neutral"
-          variant="subtle"
-        />
-      </div>
-
       <!-- No id, or request not found / already sponsored -->
       <div
-        v-else-if="!id || error"
+        v-if="!id || error"
         class="flex flex-col items-start gap-4 rounded-lg ring ring-default bg-default p-6"
       >
         <UIcon
@@ -133,8 +113,7 @@ async function withdraw() {
             label="Remove my request"
             icon="i-lucide-trash-2"
             color="error"
-            :loading="removing"
-            @click="withdraw"
+            @click="confirming = true"
           />
           <UButton
             to="/give"
@@ -145,5 +124,52 @@ async function withdraw() {
         </div>
       </div>
     </div>
+
+    <!-- Last check before the request is deleted for good -->
+    <UModal
+      v-model:open="confirming"
+      :ui="{ content: 'max-w-md', header: 'hidden' }"
+    >
+      <template #body>
+        <div class="flex flex-col items-center gap-5 px-4 py-6 text-center">
+          <UIcon
+            name="i-lucide-trash-2"
+            class="size-12 text-error"
+          />
+          <div class="space-y-2">
+            <p class="font-display text-xl font-semibold text-highlighted">
+              Delete this request?
+            </p>
+            <p class="text-toned">
+              <template v-if="book">
+                “{{ book.title }}” comes off the <em>Give a Book</em> board and
+                sponsors will no longer see it.
+              </template>
+              <template v-else>
+                It comes off the <em>Give a Book</em> board and sponsors will no
+                longer see it.
+              </template>
+              You can always ask again.
+            </p>
+          </div>
+          <div class="flex flex-wrap justify-center gap-3">
+            <UButton
+              label="Yes, delete it"
+              icon="i-lucide-trash-2"
+              color="error"
+              :loading="removing"
+              @click="withdraw"
+            />
+            <UButton
+              label="Cancel"
+              color="neutral"
+              variant="subtle"
+              :disabled="removing"
+              @click="confirming = false"
+            />
+          </div>
+        </div>
+      </template>
+    </UModal>
   </UContainer>
 </template>

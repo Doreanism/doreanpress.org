@@ -33,7 +33,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <UApp :toaster="{ progress: false }">
+  <UApp :toaster="{ progress: false, position: 'bottom-right' }">
     <KonamiRunner />
 
     <UHeader>
