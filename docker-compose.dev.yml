@@ -1,0 +1,41 @@
+# Local-only Postgres + a Neon-compatible HTTP proxy.
+#
+# The app talks to the database through `@netlify/neon`, whose `neon()` is the
+# Neon *serverless HTTP driver* — it POSTs SQL to a Neon endpoint over HTTP(S)
+# rather than speaking the raw Postgres wire protocol. So a plain local Postgres
+# isn't reachable by it directly; this proxy sits in front and speaks that HTTP
+# protocol, forwarding to the Postgres container.
+#
+# Start:  docker compose -f docker-compose.dev.yml up -d
+# Stop:   docker compose -f docker-compose.dev.yml down   (add -v to wipe data)
+#
+# Then run the app with the two NEON_* vars from .env.example set (see there).
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: dorean
+      POSTGRES_PASSWORD: dorean
+      POSTGRES_DB: dorean
+    ports:
+      - "5433:5432" # 5432 is taken on this host; the proxy uses the internal port
+    volumes:
+      - dorean-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dorean -d dorean"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  neon-proxy:
+    image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+    environment:
+      PG_CONNECTION_STRING: postgres://dorean:dorean@db:5432/dorean
+    ports:
+      - "4444:4444"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  dorean-pgdata:
