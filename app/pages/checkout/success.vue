@@ -34,7 +34,6 @@ onMounted(() => clear())
           to="/catalog"
           label="Continue browsing"
           color="primary"
-          trailing-icon="i-lucide-arrow-right"
         />
         <UButton
           to="/"

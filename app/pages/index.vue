@@ -18,7 +18,6 @@ useSeoMeta({
       :links="[{
         label: 'Browse the catalog',
         to: '/catalog',
-        trailingIcon: 'i-lucide-arrow-right',
         size: 'xl'
       }, {
         label: 'Our conviction',
@@ -49,7 +48,6 @@ useSeoMeta({
           to="/catalog"
           color="neutral"
           variant="subtle"
-          trailing-icon="i-lucide-arrow-right"
           size="lg"
         />
       </div>
@@ -81,9 +79,8 @@ useSeoMeta({
         description="Start with The Dorean Principle — the book this press is named for — or browse the whole catalog."
         variant="subtle"
         :links="[{
-          label: 'Start reading',
-          to: '/catalog/the-dorean-principle',
-          trailingIcon: 'i-lucide-arrow-right'
+          label: 'Browse catalog',
+          to: '/catalog/the-dorean-principle'
         }, {
           label: 'About Dorean Press',
           to: '/about',

@@ -55,7 +55,6 @@ async function checkout() {
         to="/catalog"
         label="Browse the catalog"
         color="primary"
-        trailing-icon="i-lucide-arrow-right"
       />
     </div>
 

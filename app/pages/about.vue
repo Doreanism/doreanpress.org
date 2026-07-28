@@ -74,8 +74,7 @@ const principles = [
       variant="subtle"
       :links="[{
         label: 'Read The Dorean Principle',
-        to: '/catalog/the-dorean-principle',
-        trailingIcon: 'i-lucide-arrow-right'
+        to: '/catalog/the-dorean-principle'
       }, {
         label: 'Browse the catalog',
         to: '/catalog',
