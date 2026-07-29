@@ -1,4 +1,4 @@
-// Sign in with Facebook. Callback URL to register: <site>/auth/facebook
+// Prove you hold a Facebook account. Callback URL to register: <site>/verify/facebook
 //
 // Facebook gives us a verified name, photo and email, but no public profile
 // link: the `user_link` permission is behind app review, and the plain numeric
@@ -20,7 +20,7 @@ const handler = defineOAuthFacebookEventHandler({
 
   async onSuccess(event, { user }: { user?: FacebookUser }) {
     if (!user?.id || !user.name) {
-      return signInFailed(event, 'facebook', new Error('Facebook returned no profile'))
+      return challengeFailed(event, 'facebook', new Error('Facebook returned no profile'))
     }
 
     // The silhouette is Facebook's "no photo set" placeholder — drop it and let
@@ -28,7 +28,7 @@ const handler = defineOAuthFacebookEventHandler({
     const picture = user.picture?.data
     const avatarUrl = picture?.is_silhouette ? undefined : picture?.url
 
-    return completeSignIn(event, {
+    return completeChallenge(event, {
       provider: 'facebook',
       subject: String(user.id),
       name: user.name,
@@ -36,7 +36,7 @@ const handler = defineOAuthFacebookEventHandler({
     }, user.email)
   },
 
-  onError: (event, error) => signInFailed(event, 'facebook', error)
+  onError: (event, error) => challengeFailed(event, 'facebook', error)
 })
 
 export default defineEventHandler((event) => {

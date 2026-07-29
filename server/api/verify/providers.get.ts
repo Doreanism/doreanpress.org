@@ -1,4 +1,4 @@
-// Which sign-in buttons to offer. Driven by which providers actually have
+// Which providers to offer a challenge with. Driven by which ones actually have
 // credentials, so a half-configured deployment never shows a button that
 // dead-ends on the provider's error page.
 import { IDENTITY_PROVIDERS } from '#shared/identity'

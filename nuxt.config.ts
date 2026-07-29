@@ -32,7 +32,17 @@ export default defineNuxtConfig({
     fromEmail: 'Dorean Press <hello@doreanpress.org>',
     // Optional: notify the press when a new request is posted.
     pressEmail: '',
-    // Public accounts a reader can sign in with to post a free-book request.
+    // The sealed cookie holding a completed identity challenge. Short-lived on
+    // purpose: it is not a login, only a proof that has to survive the redirect
+    // back from the provider and then the minute or two it takes to fill in an
+    // address. The server clears it as soon as the action it was raised for
+    // lands, so this window is a backstop, not the normal lifetime.
+    session: {
+      name: 'dorean-identity-proof',
+      maxAge: 60 * 20
+    },
+    // Public accounts a reader can prove they hold in order to post a free-book
+    // request.
     // Each is optional: a provider with no credentials simply isn't offered, so
     // the site runs with one, two, all three — or, in dev, the mock provider.
     oauth: {

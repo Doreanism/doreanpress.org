@@ -8,11 +8,11 @@
 // runtime check on the same line is belt and braces; neither is load-bearing on
 // its own.
 //
-//   /auth/mock?name=Jane%20Doe&redirect=/cart
+//   /verify/mock?name=Jane%20Doe&redirect=/cart
 //
-// The account key is derived from the name, so signing in twice as the same
-// name is the same person — which is what makes the one-open-request-per-
-// account rule testable.
+// The account key is derived from the name, so challenging twice under the same
+// name is the same person — which is what makes the one-open-request-per-account
+// rule testable.
 
 export default defineEventHandler(async (event) => {
   if (!import.meta.dev || process.env.NODE_ENV === 'production') {
@@ -23,9 +23,9 @@ export default defineEventHandler(async (event) => {
   const name = String(query.name || '').trim().slice(0, 80) || 'Test Reader'
   const subject = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-  console.warn(`[auth] mock sign-in as "${name}" — dev only, never available in production.`)
+  console.warn(`[verify] mock challenge passed as "${name}" — dev only, never available in production.`)
 
-  return completeSignIn(event, {
+  return completeChallenge(event, {
     provider: 'mock',
     subject,
     name

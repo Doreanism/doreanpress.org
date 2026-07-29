@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   accountKey,
+  CHALLENGE_PROVIDERS,
   describeIdentity,
   IDENTITY_PROVIDERS,
   isSameAccount,
   providerIcon,
   providerLabel,
-  SIGN_IN_PROVIDERS,
   type RequesterIdentity
 } from '../shared/identity'
 
@@ -73,16 +73,16 @@ describe('describeIdentity', () => {
 })
 
 describe('provider metadata', () => {
-  it('describes every provider a reader can sign in with', () => {
-    for (const provider of SIGN_IN_PROVIDERS) {
+  it('describes every provider a reader can prove an account with', () => {
+    for (const provider of CHALLENGE_PROVIDERS) {
       expect(IDENTITY_PROVIDERS[provider]).toBeDefined()
       expect(providerLabel(provider)).toBeTruthy()
       expect(providerIcon(provider)).toMatch(/^i-/)
     }
   })
 
-  it('never offers the dev-only stand-in as a real sign-in option', () => {
-    expect(SIGN_IN_PROVIDERS).not.toContain('mock')
+  it('never offers the dev-only stand-in as a real option', () => {
+    expect(CHALLENGE_PROVIDERS).not.toContain('mock')
     expect(IDENTITY_PROVIDERS.mock.devOnly).toBe(true)
   })
 

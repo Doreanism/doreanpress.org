@@ -1,4 +1,4 @@
-// Sign in with LinkedIn. Callback URL to register: <site>/auth/linkedin
+// Prove you hold a LinkedIn account. Callback URL to register: <site>/verify/linkedin
 //
 // Uses "Sign In with LinkedIn using OpenID Connect", whose userinfo endpoint
 // returns a name, photo and verified email but no vanity URL — the public
@@ -19,10 +19,10 @@ const handler = defineOAuthLinkedInEventHandler({
   async onSuccess(event, { user }: { user?: LinkedInUser }) {
     const name = user?.name || user?.given_name
     if (!user?.sub || !name) {
-      return signInFailed(event, 'linkedin', new Error('LinkedIn returned no profile'))
+      return challengeFailed(event, 'linkedin', new Error('LinkedIn returned no profile'))
     }
 
-    return completeSignIn(event, {
+    return completeChallenge(event, {
       provider: 'linkedin',
       subject: String(user.sub),
       name,
@@ -30,7 +30,7 @@ const handler = defineOAuthLinkedInEventHandler({
     }, user.email)
   },
 
-  onError: (event, error) => signInFailed(event, 'linkedin', error)
+  onError: (event, error) => challengeFailed(event, 'linkedin', error)
 })
 
 export default defineEventHandler((event) => {

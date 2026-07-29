@@ -1,4 +1,4 @@
-// Sign in with X. Callback URL to register: <site>/auth/x
+// Prove you hold an X account. Callback URL to register: <site>/verify/x
 //
 // X is the most useful of the three for a sponsor, because it is the only one
 // that hands us a public handle — the board can link straight to the profile,
@@ -14,7 +14,7 @@ interface XUser {
 }
 
 const handler = defineOAuthXEventHandler({
-  // No `offline.access`: we read the profile once at sign-in and never act on
+  // No `offline.access`: we read the profile once at challenge time and never act on
   // the reader's behalf, so there is nothing to refresh a token for.
   config: { scope: ['users.read', 'tweet.read'] },
 
@@ -22,10 +22,10 @@ const handler = defineOAuthXEventHandler({
     // The library swallows a failed profile fetch and passes the error through
     // in place of the user, so an id is what tells us the call really worked.
     if (!user?.id || !user.username) {
-      return signInFailed(event, 'x', new Error('X returned no profile'))
+      return challengeFailed(event, 'x', new Error('X returned no profile'))
     }
 
-    return completeSignIn(event, {
+    return completeChallenge(event, {
       provider: 'x',
       subject: String(user.id),
       name: user.name || user.username,
@@ -41,7 +41,7 @@ const handler = defineOAuthXEventHandler({
     // X's OAuth 2.0 scopes don't include email, so there's nothing to prefill.
   },
 
-  onError: (event, error) => signInFailed(event, 'x', error)
+  onError: (event, error) => challengeFailed(event, 'x', error)
 })
 
 export default defineEventHandler((event) => {

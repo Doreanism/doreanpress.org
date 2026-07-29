@@ -4,7 +4,7 @@ import { providerIcon, providerLabel, type RequesterIdentity } from '#shared/ide
 
 // The account a reader put behind their request.
 //
-// Deliberately understated: it reports which account signed in, and nothing
+// Deliberately understated: it reports which account was proved, and nothing
 // about whether the person deserves the books. Where the provider gives us a
 // public profile the whole badge becomes a link, because a sponsor spending
 // thirty seconds on the real account learns far more than any badge we could
@@ -24,7 +24,7 @@ const icon = computed(() => (props.requester ? providerIcon(props.requester.prov
       name="i-lucide-user-round-x"
       class="mt-px size-4 shrink-0"
     />
-    <span>Posted before sign-in was required — no account stands behind this one.</span>
+    <span>Posted before verification was required — no account stands behind this one.</span>
   </div>
 
   <component
@@ -61,7 +61,7 @@ const icon = computed(() => (props.requester ? providerIcon(props.requester.prov
           :name="icon"
           class="size-3 shrink-0"
         />
-        <span class="truncate">{{ requester.handle ? `@${requester.handle}` : `Signed in with ${label}` }}</span>
+        <span class="truncate">{{ requester.handle ? `@${requester.handle}` : `Verified with ${label}` }}</span>
       </p>
     </div>
 

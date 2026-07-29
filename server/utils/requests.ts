@@ -32,9 +32,9 @@ export interface BookRequest {
   /** Public message shown on the board. */
   message: string
   /**
-   * The public account the reader signed in with, shown on the board so a
+   * The public account the reader proved, shown on the board so a
    * sponsor can see who they are giving to. Null only on rows posted before
-   * sign-in was required — those stay visible, marked unverified.
+   * verification was required — those stay visible, marked unverified.
    */
   requester: RequesterIdentity | null
   // ── private contact + shipping (never exposed publicly) ──
@@ -136,7 +136,7 @@ function ensureSchema() {
         END $$
       `
 
-      // Verified sign-in, added later. Both columns are nullable: rows posted
+      // Verified identity, added later. Both columns are nullable: rows posted
       // before it was required keep no account and show as unverified rather
       // than being deleted or silently attributed to someone.
       await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS requester jsonb`
@@ -238,7 +238,7 @@ export async function listOpenRequests(): Promise<BookRequest[]> {
 /**
  * The request this account already has waiting on the board, if any.
  *
- * One open request per account is the main thing sign-in buys us: a scammer
+ * One open request per account is the main thing the challenge buys us: a scammer
  * can no longer paper the board with postings, because each one costs them a
  * fresh social account. It is per *open* request, so a reader whose books have
  * been sponsored is free to ask again.

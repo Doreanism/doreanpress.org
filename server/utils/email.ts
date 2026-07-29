@@ -238,7 +238,7 @@ ${SIGNATURE}`
   }
 }
 
-// `requester` is the account the reader signed in with, included so the press
+// `requester` is the account the reader proved, included so the press
 // can spot a pattern of abuse across postings that the shipping name alone
 // would hide.
 export function pressNewRequestEmail(params: { to: string, name: string, titles: string[], message: string, requester?: RequesterIdentity | null }): EmailMessage {

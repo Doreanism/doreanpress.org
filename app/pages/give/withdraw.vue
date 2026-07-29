@@ -9,7 +9,7 @@ useSeoMeta({
 
 const route = useRoute()
 const toast = useToast()
-const { loggedIn, user } = useUserSession()
+const { identity, verified, refresh: refreshProof } = useIdentityProof()
 
 const id = computed(() => String(route.query.id || ''))
 const removing = ref(false)
@@ -21,14 +21,14 @@ const { data: request, error } = await useFetch<PublicBookRequest>(
 )
 
 // Mirrors what the server enforces on the DELETE — this only decides which
-// panel to show. The account is checked against the public identity on the
-// request, which is the same thing the board displays.
+// panel to show. The proof in hand is compared against the public identity on
+// the request, which is the same thing the board displays.
 const isOwner = computed(() => {
   if (!request.value) return false
-  // A posting from before sign-in existed has no account to match, so the
+  // A posting from before the challenge existed has no account to match, so the
   // unguessable link in the confirmation email remains its only key.
   if (!request.value.requester) return true
-  return isSameAccount(user.value?.identity, request.value.requester)
+  return isSameAccount(identity.value, request.value.requester)
 })
 
 async function withdraw() {
@@ -36,6 +36,8 @@ async function withdraw() {
   removing.value = true
   try {
     await $fetch(`/api/requests/${id.value}`, { method: 'DELETE' })
+    // The server spent the proof on that removal.
+    await refreshProof()
     await navigateTo('/give')
     toast.add({
       title: 'Book request deleted',
@@ -83,36 +85,31 @@ async function withdraw() {
         />
       </div>
 
-      <!-- Someone else's request, or nobody signed in yet -->
+      <!-- Posted from another account, or no proof in hand yet -->
       <div
         v-else-if="request && !isOwner"
         class="flex flex-col gap-5 rounded-lg ring ring-default bg-default p-6"
       >
-        <template v-if="loggedIn">
+        <template v-if="verified">
           <UIcon
             name="i-lucide-shield-x"
             class="size-10 text-dimmed"
           />
           <p class="text-toned">
-            This request belongs to a different account. Only the reader who posted it can
-            take it down — sign out and back in with the account you used, if it was you.
+            You verified a different account to the one this request was posted from. Only
+            the reader who posted it can take it down — verify again with the right
+            account, if it was you.
           </p>
           <RequesterBadge :requester="request.requester" />
-          <UButton
-            to="/give"
-            label="Back to Give a Book"
-            color="neutral"
-            variant="subtle"
-            class="self-start"
-          />
+          <IdentityChallenge />
         </template>
 
         <template v-else>
           <p class="text-toned">
-            Sign in with the account you posted this request from and you can take it off
-            the board.
+            Verify the account you posted this request from and you can take it off the
+            board.
           </p>
-          <SignInPanel />
+          <IdentityChallenge />
         </template>
       </div>
 

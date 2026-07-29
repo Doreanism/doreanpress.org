@@ -1,7 +1,28 @@
 # Verified requests
 
-A reader asking for a free book signs in with a public account first, and that
+Before asking for a free book, a reader proves they hold a public account. That
 account is shown on the *Give a Book* board beside their message.
+
+## It's a challenge, not a login
+
+There are no accounts on this site. Completing the round trip to a provider
+leaves a short-lived **proof** in a sealed cookie, scoped to the action it was
+raised for. The handler that action lands in spends it — see `spendProof` in
+`server/utils/identityProof.ts` — so the next thing the reader does needs a fresh
+trip to the provider.
+
+That shape is deliberate:
+
+- Nothing to register, no password, no profile to maintain, nothing to delete.
+- No persistent identity in the header, and no sign-out, because there is no
+  session to end.
+- A stolen or stale cookie is worth almost nothing: it authorises one action, as
+  one account, within twenty minutes.
+
+`nuxt-auth-utils` supplies the OAuth dance and the sealed cookie. Its *account*
+model is not used: nothing is ever stored under `session.user`, so
+`useUserSession().loggedIn` is always false by design. Read the proof through
+`useIdentityProof()` on the client and `readProof` / `requireProof` on the server.
 
 ## What this does and doesn't claim
 
@@ -12,7 +33,8 @@ sponsor to inspect — and because the per-account limit below turns "make anoth
 posting" into "make another social account".
 
 Copy on the site is written to stay inside that claim. Please keep it there;
-"verified" should never read as "vetted by us".
+"verified" should never read as "vetted by us", and nothing should read as
+signing in.
 
 ## What a sponsor sees
 
@@ -29,27 +51,33 @@ from those two show as a verified name and face with nothing to click.
 
 Never public: the shipping address, phone, contact email, or the email the
 provider gave us. See `PublicBookRequest` in `server/utils/requests.ts` — that
-type is the boundary.
+type is the boundary. The provider's email is held beside the identity rather
+than inside it, precisely so it cannot ride along.
 
 ## Rules this buys
 
-- **Sign-in required to post.** `POST /api/requests` rejects an anonymous caller.
+- **A proof is required to post.** `POST /api/requests` rejects a caller without
+  one, then spends it.
 - **One open request per account.** Enforced on `account_key`; a reader whose
   books have been sponsored is free to ask again.
-- **Owner-only edit and withdraw.** `PATCH`/`DELETE` compare the session against
-  the account on the request. Rows posted before sign-in existed have no account
-  to compare, so for those the unguessable id in the confirmation email stays the
-  key — no weaker than the day they were posted, and it doesn't strand anyone.
+- **Only the posting account may edit or withdraw.** `PATCH`/`DELETE` compare a
+  fresh proof against the identity stored on the request. Rows posted before the
+  challenge existed have no account to compare, so for those the unguessable id
+  in the confirmation email stays the key — no weaker than the day they were
+  posted, and it doesn't strand anyone.
 - **At most `MAX_REQUEST_COPIES` copies per request**, counting every title
   together. Reselling donated books is the obvious abuse left once a request has
   a name on it. Rejected rather than quietly trimmed, and the request modal says
   so before the reader fills in an address.
 
+Note what the withdraw link in the confirmation email now is: an address, not a
+capability. Following it prompts for a fresh challenge.
+
 ## Setting up the providers
 
 Each is optional. A provider with no credentials is simply not offered, so you
 can ship with one and add the others later. Register the callback URL as
-`<site>/auth/<provider>` — e.g. `http://localhost:3000/auth/x`.
+`<site>/verify/<provider>` — e.g. `http://localhost:3000/verify/x`.
 
 - **X** — [developer.x.com](https://developer.x.com): an OAuth 2.0 app, type
   *Confidential client*, scope `users.read`.
@@ -57,15 +85,17 @@ can ship with one and add the others later. Register the callback URL as
   *Facebook Login*, permissions `public_profile` and `email`. `email` needs app
   review before it works for the public.
 - **LinkedIn** — [linkedin.com/developers](https://www.linkedin.com/developers):
-  add the *Sign In with LinkedIn using OpenID Connect* product.
+  add the *Sign In with LinkedIn using OpenID Connect* product. (That is the
+  product's own name; what we do with it is still a one-shot challenge.)
 
 Then fill in the `NUXT_OAUTH_*` pairs and `NUXT_SESSION_PASSWORD` (see
-`.env.example`). Rotating the session password signs everyone out.
+`.env.example`). Rotating the session password invalidates proofs in flight,
+which at worst means somebody verifies again.
 
 ## Developing without any of that
 
 With all six credentials blank, dev builds offer a mock provider at
-`/auth/mock?name=Some%20Name`. The account key is derived from the name, so two
+`/verify/mock?name=Some%20Name`. The account key is derived from the name, so two
 names are two people — which is how you exercise the one-request-per-account
 rule. `import.meta.dev` is replaced at build time, so the route is inert in a
 production bundle.
@@ -77,6 +107,6 @@ production bundle.
   `shared/`. A request-level harness is the obvious gap.
 - Avatars are hotlinked from the providers' CDNs and those URLs expire; the badge
   falls back to initials, but caching them would look better over time.
-- Nothing rate-limits sign-in itself, so someone with a pile of throwaway
+- Nothing rate-limits the challenge itself, so someone with a pile of throwaway
   accounts can still post one request each. The per-account limit raises the
   cost; it doesn't cap the total.

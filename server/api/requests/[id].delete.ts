@@ -21,5 +21,7 @@ export default defineEventHandler(async (event) => {
   }
 
   await deleteRequest(id)
+  // The proof was raised to take this posting down, and it has. Spend it.
+  await spendProof(event)
   return { ok: true }
 })
