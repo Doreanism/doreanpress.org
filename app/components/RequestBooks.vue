@@ -5,6 +5,13 @@ import { findBook, type RequestItem } from '#shared/catalog'
 // a plain row; several are dealt like a hand of cards — each cover tucked over
 // the one before it — instead of a tall stack of rows.
 //
+// A long order is summarised rather than drawn in full: past three titles the
+// fan ends in an ellipsis and the list collapses, so a request for a dozen
+// books takes about as much room on the board as a request for two. Everything
+// beyond that is one click away, which matters because the hidden lines are
+// still selectable. The ellipsis is deliberately not cover-shaped — a blank
+// card in the fan reads as a book we failed to load.
+//
 // Pass `selectable` with a v-model to let a sponsor pick out part of the order:
 // the titles get checkboxes (and a copy count where more than one was asked
 // for), and covers they haven't picked fade back in the fan.
@@ -63,9 +70,22 @@ function setCopies(line: { item: RequestItem }, copies: number) {
   apply(next)
 }
 
+/** Titles drawn in full before the order is summarised instead. */
+const MAX_SHOWN = 3
+
+const expanded = ref(false)
+
+/** How many titles the ellipsis and the toggle are standing in for. */
+const hiddenCount = computed(() => Math.max(0, lines.value.length - MAX_SHOWN))
+
+// The fan stays capped even when the list is open: fifteen overlapping covers
+// would run past the edge of the card whatever we did with the tilt.
+const fanned = computed(() => lines.value.slice(0, MAX_SHOWN))
+const listed = computed(() => (expanded.value ? lines.value : lines.value.slice(0, MAX_SHOWN)))
+
 /** Fan the covers out from the middle, the way a hand of cards sits. */
 function tilt(index: number) {
-  const middle = (lines.value.length - 1) / 2
+  const middle = (fanned.value.length - 1) / 2
   return `${((index - middle) * 4).toFixed(2)}deg`
 }
 </script>
@@ -124,7 +144,7 @@ function tilt(index: number) {
   >
     <div class="flex px-2 pt-2">
       <NuxtLink
-        v-for="(line, i) in lines"
+        v-for="(line, i) in fanned"
         :key="line.item.slug"
         :to="`/catalog/${line.item.slug}`"
         :style="{ rotate: tilt(i), marginLeft: i === 0 ? undefined : '-2rem' }"
@@ -137,6 +157,18 @@ function tilt(index: number) {
           :class="isPicked(line.item.slug) ? '' : 'opacity-40 saturate-0'"
         >
       </NuxtLink>
+
+      <button
+        v-if="hiddenCount"
+        type="button"
+        class="relative self-center px-3 font-display text-xl leading-none text-muted transition hover:text-primary"
+        :aria-expanded="expanded"
+        :aria-label="expanded ? 'Show fewer books' : `Show ${hiddenCount} more ${hiddenCount === 1 ? 'book' : 'books'}`"
+        :title="expanded ? 'Show fewer books' : `${hiddenCount} more`"
+        @click="expanded = !expanded"
+      >
+        …
+      </button>
     </div>
 
     <ul
@@ -144,7 +176,7 @@ function tilt(index: number) {
       class="flex flex-col gap-1 text-sm"
     >
       <li
-        v-for="line in lines"
+        v-for="line in listed"
         :key="line.item.slug"
         class="flex min-w-0 items-start gap-2"
       >
@@ -187,5 +219,17 @@ function tilt(index: number) {
         </div>
       </li>
     </ul>
+
+    <UButton
+      v-if="hiddenCount"
+      :label="expanded ? 'Show fewer' : `Show all ${lines.length} books`"
+      :icon="expanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+      color="neutral"
+      variant="link"
+      size="xs"
+      class="-mt-2 self-start px-0"
+      :aria-expanded="expanded"
+      @click="expanded = !expanded"
+    />
   </div>
 </template>
