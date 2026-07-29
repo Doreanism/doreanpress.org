@@ -9,7 +9,12 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        node: [22]
+        # Matches the npm major that generates package-lock.json locally. npm 11
+        # writes lockfiles that omit nested entries for conflicting peer ranges
+        # (vite-node wants cac@^6 while the hoisted cac is 7), and npm 10 rightly
+        # refuses to install from one — so the toolchain has to agree with the
+        # lockfile it is handed. Several dependencies also ask for ^24.11 anyway.
+        node: [24]
 
     steps:
       - name: Checkout
