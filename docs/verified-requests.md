@@ -40,6 +40,10 @@ type is the boundary.
   the account on the request. Rows posted before sign-in existed have no account
   to compare, so for those the unguessable id in the confirmation email stays the
   key — no weaker than the day they were posted, and it doesn't strand anyone.
+- **At most `MAX_REQUEST_COPIES` copies per request**, counting every title
+  together. Reselling donated books is the obvious abuse left once a request has
+  a name on it. Rejected rather than quietly trimmed, and the request modal says
+  so before the reader fills in an address.
 
 ## Setting up the providers
 
@@ -68,7 +72,11 @@ production bundle.
 
 ## Worth doing next
 
-- Nothing caps how many copies one request may ask for. Reselling free books is
-  the obvious remaining scam, and a per-request copy limit is the cheap answer.
+- None of the rules above are covered by automated tests. They were checked by
+  hand against the local stack; the unit tests only reach the pure helpers in
+  `shared/`. A request-level harness is the obvious gap.
 - Avatars are hotlinked from the providers' CDNs and those URLs expire; the badge
   falls back to initials, but caching them would look better over time.
+- Nothing rate-limits sign-in itself, so someone with a pile of throwaway
+  accounts can still post one request each. The per-account limit raises the
+  cost; it doesn't cap the total.
