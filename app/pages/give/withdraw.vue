@@ -128,7 +128,7 @@ async function withdraw() {
 
         <RequestBooks :items="request.items" />
 
-        <blockquote class="border-l-2 border-primary/40 pl-3 text-sm text-toned italic">
+        <blockquote class="border-l-2 border-primary/40 pl-3 text-sm text-toned italic hyphens-auto wrap-anywhere">
           “{{ request.message }}”
         </blockquote>
 
