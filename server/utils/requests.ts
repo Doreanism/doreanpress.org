@@ -1,8 +1,10 @@
 // Pay-it-forward book requests.
 //
-// A reader who cannot pay submits a request (a public message + private
-// shipping details). Another visitor sponsors it; once paid + sent to Lulu the
-// request is marked fulfilled and drops off the public board.
+// A reader who cannot pay submits a request — a whole *order* of one or more
+// titles, with a public message and private shipping details. Another visitor
+// sponsors the order as a unit; once paid + sent to Lulu the request is marked
+// fulfilled and drops off the public board. Sponsorship is never per-book:
+// splitting an order would ship a reader half of what they asked for.
 //
 // Persistence: Netlify DB (Neon Postgres). `neon()` reads NETLIFY_DATABASE_URL,
 // which Netlify injects in production and `netlify dev` injects locally — run
@@ -10,6 +12,7 @@
 
 import { neon } from '@netlify/neon'
 import { neon as neonDirect, neonConfig } from '@neondatabase/serverless'
+import type { RequestItem } from '#shared/catalog'
 
 export type RequestStatus = 'open' | 'fulfilled'
 
@@ -24,7 +27,8 @@ export interface RequestAddress {
 
 export interface BookRequest {
   id: string
-  bookSlug: string
+  /** The books requested, sponsored together as one order. Never empty. */
+  items: RequestItem[]
   /** Public message shown on the board. */
   message: string
   // ── private contact + shipping (never exposed publicly) ──
@@ -45,17 +49,17 @@ export interface BookRequest {
 /** The only fields safe to send to the browser. */
 export interface PublicBookRequest {
   id: string
-  bookSlug: string
+  items: RequestItem[]
   message: string
   createdAt: string
 }
 
 export function toPublic(r: BookRequest): PublicBookRequest {
-  return { id: r.id, bookSlug: r.bookSlug, message: r.message, createdAt: r.createdAt }
+  return { id: r.id, items: r.items, message: r.message, createdAt: r.createdAt }
 }
 
 export interface CreateRequestInput {
-  bookSlug: string
+  items: RequestItem[]
   message: string
   name: string
   email: string
@@ -96,29 +100,53 @@ function db(): Sql {
   return _sql
 }
 
-// Timestamps are stored as ISO text and the address as jsonb, so a row maps
-// back to BookRequest losslessly with no Date/JSON coercion surprises.
+// Timestamps are stored as ISO text and the items/address as jsonb, so a row
+// maps back to BookRequest losslessly with no Date/JSON coercion surprises.
 let schema: Promise<void> | null = null
 function ensureSchema() {
   if (!schema) {
-    schema = db()`
-      CREATE TABLE IF NOT EXISTS book_requests (
-        id                text PRIMARY KEY,
-        book_slug         text NOT NULL,
-        message           text NOT NULL,
-        name              text NOT NULL,
-        email             text NOT NULL,
-        phone             text NOT NULL,
-        address           jsonb NOT NULL,
-        status            text NOT NULL DEFAULT 'open',
-        created_at        text NOT NULL,
-        sponsor_email     text,
-        stripe_session_id text,
-        lulu_job_id       text,
-        shipping_status   text,
-        fulfilled_at      text
-      )
-    `.then(() => undefined)
+    schema = (async () => {
+      const sql = db()
+      await sql`
+        CREATE TABLE IF NOT EXISTS book_requests (
+          id                text PRIMARY KEY,
+          items             jsonb NOT NULL DEFAULT '[]'::jsonb,
+          message           text NOT NULL,
+          name              text NOT NULL,
+          email             text NOT NULL,
+          phone             text NOT NULL,
+          address           jsonb NOT NULL,
+          status            text NOT NULL DEFAULT 'open',
+          created_at        text NOT NULL,
+          sponsor_email     text,
+          stripe_session_id text,
+          lulu_job_id       text,
+          shipping_status   text,
+          fulfilled_at      text
+        )
+      `
+
+      // Migration off the one-book-per-request schema. Tables created before
+      // requests became orders have `book_slug` instead of `items`; fold each
+      // legacy row into a single-line order. The old column is kept (nullable)
+      // rather than dropped so the change stays reversible.
+      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS items jsonb NOT NULL DEFAULT '[]'::jsonb`
+      await sql`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'book_requests' AND column_name = 'book_slug'
+          ) THEN
+            ALTER TABLE book_requests ALTER COLUMN book_slug DROP NOT NULL;
+            UPDATE book_requests
+               SET items = jsonb_build_array(
+                     jsonb_build_object('slug', book_slug, 'quantity', 1))
+             WHERE items = '[]'::jsonb AND book_slug IS NOT NULL;
+          END IF;
+        END $$
+      `
+    })()
   }
   return schema
 }
@@ -126,7 +154,7 @@ function ensureSchema() {
 function fromRow(r: Record<string, unknown>): BookRequest {
   return {
     id: r.id as string,
-    bookSlug: r.book_slug as string,
+    items: (r.items as RequestItem[]) ?? [],
     message: r.message as string,
     name: r.name as string,
     email: r.email as string,
@@ -147,16 +175,16 @@ async function upsert(r: BookRequest) {
   await ensureSchema()
   await db()`
     INSERT INTO book_requests
-      (id, book_slug, message, name, email, phone, address, status, created_at,
+      (id, items, message, name, email, phone, address, status, created_at,
        sponsor_email, stripe_session_id, lulu_job_id, shipping_status, fulfilled_at)
     VALUES
-      (${r.id}, ${r.bookSlug}, ${r.message}, ${r.name}, ${r.email}, ${r.phone},
+      (${r.id}, ${JSON.stringify(r.items)}::jsonb, ${r.message}, ${r.name}, ${r.email}, ${r.phone},
        ${JSON.stringify(r.address)}::jsonb, ${r.status}, ${r.createdAt},
        ${r.sponsorEmail ?? null}, ${r.stripeSessionId ?? null},
        ${r.luluJobId != null ? String(r.luluJobId) : null},
        ${r.shippingStatus ?? null}, ${r.fulfilledAt ?? null})
     ON CONFLICT (id) DO UPDATE SET
-      book_slug = EXCLUDED.book_slug,
+      items = EXCLUDED.items,
       message = EXCLUDED.message,
       name = EXCLUDED.name,
       email = EXCLUDED.email,

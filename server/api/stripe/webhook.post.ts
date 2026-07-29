@@ -1,5 +1,5 @@
 import type Stripe from 'stripe'
-import { findBook } from '#shared/catalog'
+import { findBook, itemTitles } from '#shared/catalog'
 import type { LuluLineItem, LuluShippingAddress, ShippingLevel } from '../../utils/lulu'
 
 // In-memory guard against duplicate webhook deliveries. For production-grade
@@ -62,12 +62,6 @@ async function fulfillSponsorship(session: Stripe.Checkout.Session) {
     return
   }
 
-  const book = findBook(request.bookSlug)
-  if (!book) {
-    console.error(`[sponsorship] request ${requestId} references unknown book ${request.bookSlug}.`)
-    return
-  }
-
   const shippingAddress: LuluShippingAddress = {
     name: request.name,
     street1: request.address.line1,
@@ -80,15 +74,31 @@ async function fulfillSponsorship(session: Stripe.Checkout.Session) {
     email: request.email
   }
 
-  const lineItems: LuluLineItem[] = [{
-    externalId: `${session.id}:${book.slug}`,
-    title: book.title,
-    podPackageId: book.lulu.podPackageId,
-    pageCount: book.lulu.pageCount,
-    interiorPdfUrl: book.lulu.interiorPdfUrl,
-    coverPdfUrl: book.lulu.coverPdfUrl,
-    quantity: 1
-  }]
+  // The whole order prints as one job, so it reaches the reader in one parcel.
+  const lineItems: LuluLineItem[] = []
+  for (const item of request.items) {
+    const book = findBook(item.slug)
+    if (!book) {
+      console.error(`[sponsorship] request ${requestId} references unknown book ${item.slug}; skipping that line.`)
+      continue
+    }
+    lineItems.push({
+      externalId: `${session.id}:${book.slug}`,
+      title: book.title,
+      podPackageId: book.lulu.podPackageId,
+      pageCount: book.lulu.pageCount,
+      interiorPdfUrl: book.lulu.interiorPdfUrl,
+      coverPdfUrl: book.lulu.coverPdfUrl,
+      quantity: item.quantity
+    })
+  }
+
+  if (lineItems.length === 0) {
+    console.error(`[sponsorship] request ${requestId} produced no printable line items; skipping.`)
+    return
+  }
+
+  const titles = itemTitles(request.items)
 
   try {
     const job = await createPrintJob({
@@ -110,16 +120,16 @@ async function fulfillSponsorship(session: Stripe.Checkout.Session) {
     })
     console.info(`[sponsorship] request ${requestId} fulfilled via Lulu job ${jobId} (mock=${isLuluMocked()}).`)
 
-    // Close the loop: tell the requester their copy is coming, thank the sponsor.
+    // Close the loop: tell the requester their order is coming, thank the sponsor.
     await sendEmail(requestFulfilledEmail({
       to: request.email,
       name: request.name,
-      bookTitle: book.title,
+      titles,
       city: request.address.city
     }))
     const sponsorEmail = session.customer_details?.email
     if (sponsorEmail) {
-      await sendEmail(sponsorThankYouEmail({ to: sponsorEmail, bookTitle: book.title }))
+      await sendEmail(sponsorThankYouEmail({ to: sponsorEmail, titles }))
     }
   } catch (err) {
     console.error(`[sponsorship] FAILED to fulfil request ${requestId} for session ${session.id}:`, err)

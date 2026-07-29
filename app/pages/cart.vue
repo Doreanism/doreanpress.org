@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatPrice, formatPounds } from '#shared/catalog'
 
-const { lines, items, subtotalCents, totalWeightOz, isEmpty, setQuantity, remove } = useCart()
+const { lines, items, subtotalCents, totalWeightOz, isEmpty, setQuantity, remove, clear } = useCart()
 const toast = useToast()
 const loading = ref(false)
 
@@ -203,8 +203,9 @@ async function checkout() {
         />
 
         <RequestFreeModal
-          :books="lines.map(l => l.book)"
+          :items="items"
           trigger-label="Request free order"
+          @submitted="clear()"
         />
 
         <p class="mt-3 text-center text-xs text-muted">

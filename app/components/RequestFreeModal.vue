@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import type { Book } from '#shared/catalog'
+import { findBook, summarizeTitles, type RequestItem } from '#shared/catalog'
 
+// The whole set of items is posted as ONE request — an order a sponsor funds in
+// full — rather than a separate posting per title.
 const props = withDefaults(defineProps<{
-  books: Book[]
+  items: RequestItem[]
   triggerLabel?: string
   disabled?: boolean
 }>(), {
@@ -10,16 +12,23 @@ const props = withDefaults(defineProps<{
   disabled: false
 })
 
+// The parent owns the items, so it decides what to do with them once the
+// request is on the board — the cart page empties itself.
+const emit = defineEmits<{ submitted: [] }>()
+
 const open = ref(false)
 const loading = ref(false)
 const toast = useToast()
 
-const titles = computed(() => props.books.map(b => b.title))
+const titles = computed(() =>
+  props.items
+    .map(item => findBook(item.slug)?.title)
+    .filter((t): t is string => Boolean(t)))
+
 const summary = computed(() => {
   if (titles.value.length === 0) return ''
-  if (titles.value.length === 1) return `“${titles.value[0]}”`
-  if (titles.value.length === 2) return `“${titles.value[0]}” and “${titles.value[1]}”`
-  return `${titles.value.length} books from your cart`
+  if (titles.value.length > 2) return `these ${titles.value.length} books`
+  return summarizeTitles(titles.value.map(t => `“${t}”`))
 })
 
 const form = reactive({
@@ -43,7 +52,7 @@ function reset() {
 }
 
 async function submit() {
-  if (props.books.length === 0) return
+  if (props.items.length === 0) return
   loading.value = true
   try {
     const address = {
@@ -54,27 +63,29 @@ async function submit() {
       postalCode: form.postalCode,
       country: form.country
     }
-    // One request per distinct book, sharing the same message + address.
-    await Promise.all(props.books.map(book => $fetch('/api/requests', {
+    await $fetch('/api/requests', {
       method: 'POST',
       body: {
-        bookSlug: book.slug,
+        items: props.items,
         message: form.message,
         name: form.name,
         email: form.email,
         phone: form.phone,
         address
       }
-    })))
+    })
 
     toast.add({
-      title: props.books.length > 1 ? 'Requests submitted' : 'Request submitted',
-      description: 'Your request is now on the Give a Book board. We’ll email you when a sponsor sends your copy.',
+      title: 'Request submitted',
+      description: props.items.length > 1
+        ? 'Your order is now on the Give a Book board. We’ll email you when a sponsor covers it.'
+        : 'Your request is now on the Give a Book board. We’ll email you when a sponsor sends your copy.',
       icon: 'i-lucide-heart-handshake',
       color: 'primary'
     })
     reset()
     open.value = false
+    emit('submitted')
   } catch (err) {
     const message = (err as { data?: { statusMessage?: string } })?.data?.statusMessage || 'Something went wrong. Please try again.'
     toast.add({ title: 'Could not submit', description: message, icon: 'i-lucide-triangle-alert', color: 'error' })
@@ -87,13 +98,13 @@ async function submit() {
 <template>
   <UModal
     v-model:open="open"
-    title="Request a free copy"
-    :description="`Tell us why you’d like ${summary}. Your message appears on the Give a Book board so a sponsor can send you a copy. Your contact and address stay private.`"
+    :title="items.length > 1 ? 'Request these books' : 'Request a free copy'"
+    :description="`Tell us why you’d like ${summary}. Your message appears on the Give a Book board so a sponsor can cover ${items.length > 1 ? 'the whole order' : 'your copy'}. Your contact and address stay private.`"
     :ui="{ content: 'max-w-xl' }"
   >
     <UButton
       :label="triggerLabel"
-      :disabled="disabled || books.length === 0"
+      :disabled="disabled || items.length === 0"
       icon="i-lucide-gift"
       color="neutral"
       variant="subtle"

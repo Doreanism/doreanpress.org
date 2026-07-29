@@ -168,3 +168,49 @@ export function formatPrice(cents: number, currency: string = 'usd'): string {
 export function formatPounds(totalOz: number): string {
   return `${(totalOz / 16).toFixed(2)} pounds`
 }
+
+// ── Pay-it-forward requests ──────────────────────────────────────────────
+//
+// A request is an *order*: one or more titles, requested and sponsored as a
+// unit. These helpers live here so the board, the Stripe session and the
+// emails all price and describe an order the same way.
+
+/** One line of a book request: a catalog slug and how many copies. */
+export interface RequestItem {
+  slug: string
+  quantity: number
+}
+
+/**
+ * Flat shipping a sponsor covers for a whole request — one order ships in one
+ * parcel, so this is charged once regardless of how many titles it holds.
+ */
+export const SPONSOR_SHIPPING_CENTS = 499
+
+/** Subtotal of a request's books, in cents. Unknown slugs are skipped. */
+export function itemsSubtotalCents(items: RequestItem[]): number {
+  return items.reduce((n, item) => {
+    const book = findBook(item.slug)
+    return book ? n + book.priceCents * item.quantity : n
+  }, 0)
+}
+
+/** What a sponsor pays to cover a whole request: books plus one shipping charge. */
+export function sponsorTotalCents(items: RequestItem[]): number {
+  return itemsSubtotalCents(items) + SPONSOR_SHIPPING_CENTS
+}
+
+/** Titles of a request's books, in the order they were requested. */
+export function itemTitles(items: RequestItem[]): string[] {
+  return items
+    .map(item => findBook(item.slug)?.title)
+    .filter((t): t is string => Boolean(t))
+}
+
+/** Join titles into prose: 'A', 'A and B', 'A, B, and C'. */
+export function summarizeTitles(titles: string[]): string {
+  if (titles.length === 0) return 'your order'
+  if (titles.length === 1) return titles[0]!
+  if (titles.length === 2) return `${titles[0]} and ${titles[1]}`
+  return `${titles.slice(0, -1).join(', ')}, and ${titles[titles.length - 1]}`
+}

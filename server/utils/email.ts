@@ -2,6 +2,8 @@
 // SDK dependency. When `resendApiKey` is unset, emails are logged to the console
 // instead of sent, so the pay-it-forward loop works without credentials.
 
+import { summarizeTitles } from '#shared/catalog'
+
 export interface EmailMessage {
   to: string
   subject: string
@@ -74,11 +76,41 @@ ${body}
 </div>`
 }
 
-export function requestConfirmationEmail(params: { to: string, name: string, bookTitle: string, withdrawUrl?: string }): EmailMessage {
-  const { to, name, bookTitle, withdrawUrl } = params
+// A request is a whole order, so every template below takes the list of titles
+// it covers. These helpers keep one title reading naturally ("your copy of
+// “X”") while several read as an order, without branching in each template.
+
+/** Titles as prose with typographic quotes: '“A”', '“A” and “B”'. */
+function quoted(titles: string[]): string {
+  return summarizeTitles(titles.map(t => `“${t}”`))
+}
+
+/** Plain-text variant, for the text/plain part. */
+function quotedPlain(titles: string[]): string {
+  return summarizeTitles(titles.map(t => `"${t}"`))
+}
+
+/** 'your copy of “A”' vs 'your order of 3 books' — subject-line friendly. */
+function orderNoun(titles: string[]): string {
+  return titles.length === 1 ? `your copy of “${titles[0]}”` : `your order of ${titles.length} books`
+}
+
+/** '<li>' list of every title in the order, or nothing for a single title. */
+function titleList(titles: string[]): string {
+  if (titles.length <= 1) return ''
+  return `<ul style="padding-left:18px">${titles.map(t => `<li>${t}</li>`).join('')}</ul>`
+}
+
+export function requestConfirmationEmail(params: { to: string, name: string, titles: string[], withdrawUrl?: string }): EmailMessage {
+  const { to, name, titles, withdrawUrl } = params
+  const many = titles.length > 1
+  const what = many ? 'Your request' : `Your request for ${quotedPlain(titles)}`
+  const listText = many ? `\n\n${titles.map(t => `  · ${t}`).join('\n')}` : ''
   const text = `Hi ${name},
 
-Your request for "${bookTitle}" is now on the Dorean Press "Give a Book" board. When another reader chooses to sponsor it, we'll print a copy and ship it to you — and we'll email you the moment that happens.
+${what} is now on the Dorean Press "Give a Book" board.${listText}
+
+When another reader chooses to sponsor it, we'll print ${many ? 'these books' : 'a copy'} and ship ${many ? 'them' : 'it'} to you together — and we'll email you the moment that happens.
 
 Thank you for letting the community give freely.${withdrawUrl
   ? `
@@ -90,10 +122,11 @@ ${withdrawUrl}`
 ${SIGNATURE}`
   return {
     to,
-    subject: `Your request for “${bookTitle}” is posted`,
+    subject: many ? `Your book request is posted (${titles.length} books)` : `Your request for ${quoted(titles)} is posted`,
     text,
     html: layout(`<p>Hi ${name},</p>
-<p>Your request for <strong>“${bookTitle}”</strong> is now on the Dorean Press <em>Give a Book</em> board. When another reader chooses to sponsor it, we’ll print a copy and ship it to you — and we’ll email you the moment that happens.</p>
+<p>${many ? '<strong>Your request</strong>' : `Your request for <strong>${quoted(titles)}</strong>`} is now on the Dorean Press <em>Give a Book</em> board.</p>${titleList(titles)}
+<p>When another reader chooses to sponsor it, we’ll print ${many ? 'these books' : 'a copy'} and ship ${many ? 'them' : 'it'} to you together — and we’ll email you the moment that happens.</p>
 <p>Thank you for letting the community give freely.</p>${withdrawUrl
   ? `
 <p style="font-size:14px;color:#78716c">Changed your mind? You can <a href="${withdrawUrl}" style="color:#78716c">remove your request</a> any time before someone sponsors it.</p>`
@@ -101,31 +134,38 @@ ${SIGNATURE}`
   }
 }
 
-export function requestFulfilledEmail(params: { to: string, name: string, bookTitle: string, city?: string }): EmailMessage {
-  const { to, name, bookTitle, city } = params
+export function requestFulfilledEmail(params: { to: string, name: string, titles: string[], city?: string }): EmailMessage {
+  const { to, name, titles, city } = params
+  const many = titles.length > 1
   const dest = city ? ` to ${city}` : ''
+  const listText = many ? `\n\n${titles.map(t => `  · ${t}`).join('\n')}` : ''
   const text = `Hi ${name},
 
-Good news — a reader has sponsored your copy of "${bookTitle}". It’s being printed on demand and shipped${dest} now. Please allow some time for printing and delivery.
+Good news — a reader has sponsored ${many ? 'your whole request' : `your copy of ${quotedPlain(titles)}`}.${listText}
+
+${many ? 'The books are' : 'It’s'} being printed on demand and shipped${dest} now, together in one parcel. Please allow some time for printing and delivery.
 
 Freely you have received; freely give.
 
 ${SIGNATURE}`
   return {
     to,
-    subject: `Someone sponsored your copy of “${bookTitle}”`,
+    subject: many ? `Someone sponsored your request (${titles.length} books)` : `Someone sponsored ${orderNoun(titles)}`,
     text,
     html: layout(`<p>Hi ${name},</p>
-<p>Good news — a reader has <strong>sponsored your copy</strong> of “${bookTitle}”. It’s being printed on demand and shipped${dest} now. Please allow some time for printing and delivery.</p>
+<p>Good news — a reader has <strong>sponsored ${many ? 'your whole request' : `your copy of ${quoted(titles)}`}</strong>.</p>${titleList(titles)}
+<p>${many ? 'The books are' : 'It’s'} being printed on demand and shipped${dest} now, together in one parcel. Please allow some time for printing and delivery.</p>
 <p><em>Freely you have received; freely give.</em></p>`)
   }
 }
 
-export function requestShippedEmail(params: { to: string, name: string, bookTitle: string, trackingUrl?: string }): EmailMessage {
-  const { to, name, bookTitle, trackingUrl } = params
+export function requestShippedEmail(params: { to: string, name: string, titles: string[], trackingUrl?: string }): EmailMessage {
+  const { to, name, titles, trackingUrl } = params
+  const many = titles.length > 1
+  const listText = many ? `\n\n${titles.map(t => `  · ${t}`).join('\n')}` : ''
   const text = `Hi ${name},
 
-Your copy of "${bookTitle}" has shipped and is on its way to you.${trackingUrl
+${many ? 'Your order has' : `Your copy of ${quotedPlain(titles)} has`} shipped and is on its way to you.${listText}${trackingUrl
   ? `
 
 Track your package here:
@@ -137,10 +177,10 @@ Freely you have received; freely give.
 ${SIGNATURE}`
   return {
     to,
-    subject: `Your copy of “${bookTitle}” has shipped`,
+    subject: `${many ? 'Your order' : `Your copy of ${quoted(titles)}`} has shipped`,
     text,
     html: layout(`<p>Hi ${name},</p>
-<p>Your copy of <strong>“${bookTitle}”</strong> has shipped and is on its way to you.</p>${trackingUrl
+<p>${many ? '<strong>Your order</strong>' : `Your copy of <strong>${quoted(titles)}</strong>`} has shipped and is on its way to you.</p>${titleList(titles)}${trackingUrl
   ? `
 <p><a href="${trackingUrl}">Track your package</a></p>`
   : ''}
@@ -148,37 +188,42 @@ ${SIGNATURE}`
   }
 }
 
-export function sponsorThankYouEmail(params: { to: string, bookTitle: string }): EmailMessage {
-  const { to, bookTitle } = params
+export function sponsorThankYouEmail(params: { to: string, titles: string[] }): EmailMessage {
+  const { to, titles } = params
+  const many = titles.length > 1
+  const listText = many ? `\n\n${titles.map(t => `  · ${t}`).join('\n')}` : ''
   const text = `Thank you.
 
-Because of your gift, a copy of "${bookTitle}" is on its way to a reader who asked for one. You've helped keep the gospel freely given.
+Because of your gift, ${many ? 'a full order of books is' : `a copy of ${quotedPlain(titles)} is`} on its way to a reader who asked for ${many ? 'them' : 'one'}.${listText}
+
+You've helped keep the gospel freely given.
 
 With gratitude,
 ${SIGNATURE}`
   return {
     to,
-    subject: `Thank you for giving “${bookTitle}”`,
+    subject: many ? `Thank you for giving ${titles.length} books` : `Thank you for giving ${quoted(titles)}`,
     text,
     html: layout(`<p>Thank you.</p>
-<p>Because of your gift, a copy of <strong>“${bookTitle}”</strong> is on its way to a reader who asked for one. You’ve helped keep the gospel freely given.</p>
+<p>Because of your gift, ${many ? '<strong>a full order of books</strong> is' : `a copy of <strong>${quoted(titles)}</strong> is`} on its way to a reader who asked for ${many ? 'them' : 'one'}.</p>${titleList(titles)}
+<p>You’ve helped keep the gospel freely given.</p>
 <p>With gratitude,</p>`)
   }
 }
 
-export function pressNewRequestEmail(params: { to: string, name: string, bookTitle: string, message: string }): EmailMessage {
-  const { to, name, bookTitle, message } = params
+export function pressNewRequestEmail(params: { to: string, name: string, titles: string[], message: string }): EmailMessage {
+  const { to, name, titles, message } = params
   const text = `New request on the Give a Book board.
 
-Book: ${bookTitle}
+${titles.length > 1 ? `Books:\n${titles.map(t => `  · ${t}`).join('\n')}` : `Book: ${titles[0] ?? '(unknown)'}`}
 From: ${name}
 Message: ${message}`
   return {
     to,
-    subject: `New request: “${bookTitle}”`,
+    subject: titles.length > 1 ? `New request: ${titles.length} books` : `New request: ${quoted(titles)}`,
     text,
     html: layout(`<p><strong>New request on the Give a Book board.</strong></p>
-<p><strong>Book:</strong> ${bookTitle}<br/>
+<p><strong>${titles.length > 1 ? 'Books' : 'Book'}:</strong> ${summarizeTitles(titles)}<br/>
 <strong>From:</strong> ${name}</p>
 <blockquote style="border-left:3px solid #ccc;padding-left:12px;color:#57534e">${message}</blockquote>`)
   }

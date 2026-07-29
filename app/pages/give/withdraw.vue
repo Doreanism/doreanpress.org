@@ -19,7 +19,11 @@ const { data: request, error } = await useFetch<PublicBookRequest>(
   { immediate: !!id.value }
 )
 
-const book = computed(() => (request.value ? findBook(request.value.bookSlug) : undefined))
+// A request is a whole order, so the confirmation lists every title in it.
+const lines = computed(() =>
+  (request.value?.items ?? [])
+    .map(item => ({ item, book: findBook(item.slug) }))
+    .filter((l): l is { item: typeof l.item, book: NonNullable<typeof l.book> } => Boolean(l.book)))
 
 async function withdraw() {
   if (!id.value) return
@@ -83,22 +87,31 @@ async function withdraw() {
           sponsors will no longer see it. You can submit a new request any time.
         </p>
 
-        <div
-          v-if="book"
-          class="flex gap-4"
-        >
-          <img
-            :src="book.cover"
-            :alt="book.title"
-            class="h-24 w-auto rounded ring ring-default"
+        <div class="flex flex-col gap-3">
+          <div
+            v-for="line in lines"
+            :key="line.item.slug"
+            class="flex gap-4"
           >
-          <div class="min-w-0">
-            <p class="font-display font-semibold text-highlighted">
-              {{ book.title }}
-            </p>
-            <p class="text-sm text-muted">
-              {{ book.author }}
-            </p>
+            <img
+              :src="line.book.cover"
+              :alt="line.book.title"
+              class="h-24 w-auto rounded ring ring-default"
+            >
+            <div class="min-w-0">
+              <p class="font-display font-semibold text-highlighted">
+                {{ line.book.title }}
+              </p>
+              <p class="text-sm text-muted">
+                {{ line.book.author }}
+              </p>
+              <p
+                v-if="line.item.quantity > 1"
+                class="text-sm text-toned"
+              >
+                {{ line.item.quantity }} copies
+              </p>
+            </div>
           </div>
         </div>
 

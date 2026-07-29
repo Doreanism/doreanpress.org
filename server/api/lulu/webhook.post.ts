@@ -1,4 +1,4 @@
-import { findBook } from '#shared/catalog'
+import { itemTitles } from '#shared/catalog'
 
 // Lulu webhook receiver.
 //
@@ -66,12 +66,11 @@ export default defineEventHandler(async (event) => {
   console.info(`[lulu webhook] request ${request.id} shipping status → ${statusName}.`)
 
   if (statusName === 'SHIPPED') {
-    const book = findBook(request.bookSlug)
     const trackingUrl = job?.line_items?.flatMap(li => li.tracking_urls || []).find(Boolean)
     await sendEmail(requestShippedEmail({
       to: request.email,
       name: request.name,
-      bookTitle: book?.title || 'your book',
+      titles: itemTitles(request.items),
       trackingUrl
     }))
   }

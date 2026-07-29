@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { findBook, formatPrice } from '#shared/catalog'
+import { findBook, formatPrice, sponsorTotalCents, type RequestItem } from '#shared/catalog'
 import type { PublicBookRequest } from '~~/server/utils/requests'
 
 useSeoMeta({
@@ -19,7 +19,7 @@ onMounted(() => {
   if (route.query.sponsored) {
     toast.add({
       title: 'Thank you for giving',
-      description: 'Your sponsored copy is on its way to the press. The reader will receive it soon.',
+      description: 'The request you sponsored is on its way to the press. The reader will receive it soon.',
       icon: 'i-lucide-heart',
       color: 'primary'
     })
@@ -27,8 +27,20 @@ onMounted(() => {
   }
 })
 
-function bookFor(slug: string) {
-  return findBook(slug)
+/** Resolve a request's items to catalog entries, dropping anything unknown. */
+function linesFor(items: RequestItem[]) {
+  return items
+    .map(item => ({ item, book: findBook(item.slug) }))
+    .filter((l): l is { item: RequestItem, book: NonNullable<typeof l.book> } => Boolean(l.book))
+}
+
+/** A request is only sponsorable if we can still print something in it. */
+function isSponsorable(items: RequestItem[]) {
+  return linesFor(items).length > 0
+}
+
+function totalCopies(items: RequestItem[]) {
+  return items.reduce((n, i) => n + i.quantity, 0)
 }
 
 async function sponsor(id: string) {
@@ -58,7 +70,7 @@ function formatDate(iso: string) {
     <UPageHeader
       :ui="{ title: 'font-display' }"
       title="Give a Book"
-      description="Some readers have asked for a copy they cannot pay for. Choose one and sponsor it — we’ll print it on demand and ship it directly to them. Freely you have received; freely give."
+      description="Some readers have asked for books they cannot pay for. Choose a request and sponsor it in full — we’ll print it on demand and ship it directly to them. Freely you have received; freely give."
     />
 
     <div
@@ -87,31 +99,44 @@ function formatDate(iso: string) {
         :key="req.id"
         class="flex flex-col gap-4 rounded-lg ring ring-default bg-default p-5"
       >
-        <div
-          v-if="bookFor(req.bookSlug)"
-          class="flex gap-4"
-        >
-          <NuxtLink :to="`/catalog/${req.bookSlug}`">
-            <img
-              :src="bookFor(req.bookSlug)!.cover"
-              :alt="bookFor(req.bookSlug)!.title"
-              class="h-24 w-auto rounded ring ring-default"
-            >
-          </NuxtLink>
-          <div class="min-w-0">
-            <NuxtLink
-              :to="`/catalog/${req.bookSlug}`"
-              class="font-display font-semibold text-highlighted hover:text-primary"
-            >
-              {{ bookFor(req.bookSlug)!.title }}
+        <div class="flex flex-col gap-3">
+          <div
+            v-for="line in linesFor(req.items)"
+            :key="line.item.slug"
+            class="flex gap-4"
+          >
+            <NuxtLink :to="`/catalog/${line.item.slug}`">
+              <img
+                :src="line.book.cover"
+                :alt="line.book.title"
+                class="h-24 w-auto rounded ring ring-default"
+              >
             </NuxtLink>
-            <p class="text-sm text-muted">
-              {{ bookFor(req.bookSlug)!.author }}
-            </p>
-            <p class="mt-1 text-xs text-dimmed">
-              Requested {{ formatDate(req.createdAt) }}
-            </p>
+            <div class="min-w-0">
+              <NuxtLink
+                :to="`/catalog/${line.item.slug}`"
+                class="font-display font-semibold text-highlighted hover:text-primary"
+              >
+                {{ line.book.title }}
+              </NuxtLink>
+              <p class="text-sm text-muted">
+                {{ line.book.author }}
+              </p>
+              <p
+                v-if="line.item.quantity > 1"
+                class="text-sm text-toned"
+              >
+                {{ line.item.quantity }} copies
+              </p>
+            </div>
           </div>
+
+          <p class="text-xs text-dimmed">
+            Requested {{ formatDate(req.createdAt) }}
+            <span v-if="req.items.length > 1">
+              · {{ req.items.length }} titles, {{ totalCopies(req.items) }} copies
+            </span>
+          </p>
         </div>
 
         <blockquote class="flex-1 border-l-2 border-primary/40 pl-3 text-sm text-toned italic">
@@ -120,14 +145,18 @@ function formatDate(iso: string) {
 
         <div class="flex flex-col gap-2">
           <UButton
-            :label="`Sponsor this copy · ${formatPrice(bookFor(req.bookSlug)?.priceCents ?? 0)}`"
+            :label="`${req.items.length > 1 ? 'Sponsor this order' : 'Sponsor this copy'} · ${formatPrice(sponsorTotalCents(req.items))}`"
             icon="i-lucide-gift"
             color="primary"
             block
             :loading="sponsoringId === req.id"
-            :disabled="!bookFor(req.bookSlug)"
+            :disabled="!isSponsorable(req.items)"
             @click="sponsor(req.id)"
           />
+          <p class="text-center text-xs text-dimmed">
+            Covers {{ req.items.length > 1 ? 'every book in the request' : 'the book' }} plus shipping — the whole
+            request is funded at once.
+          </p>
           <UButton
             :to="`/give/withdraw?id=${req.id}`"
             label="This is my request — remove it"

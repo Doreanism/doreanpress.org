@@ -1,7 +1,7 @@
-import { findBook } from '#shared/catalog'
+import { findBook, itemTitles, type RequestItem } from '#shared/catalog'
 
 interface Body {
-  bookSlug?: string
+  items?: { slug?: string, quantity?: number }[]
   message?: string
   name?: string
   email?: string
@@ -21,9 +21,20 @@ const str = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max)
 export default defineEventHandler(async (event) => {
   const body = await readBody<Body>(event)
 
-  const book = findBook(str(body?.bookSlug, 120))
-  if (!book) {
-    throw createError({ statusCode: 400, statusMessage: 'Unknown book.' })
+  // Re-derive every line from the catalog and merge duplicate slugs, so the
+  // order stored on the board is one the press can actually print.
+  const items: RequestItem[] = []
+  for (const raw of Array.isArray(body?.items) ? body.items : []) {
+    const book = findBook(str(raw?.slug, 120))
+    const quantity = Math.max(1, Math.min(99, Math.floor(Number(raw?.quantity) || 1)))
+    if (!book) continue
+    const existing = items.find(i => i.slug === book.slug)
+    if (existing) existing.quantity = Math.min(99, existing.quantity + quantity)
+    else items.push({ slug: book.slug, quantity })
+  }
+
+  if (items.length === 0) {
+    throw createError({ statusCode: 400, statusMessage: 'Your request has no books in it.' })
   }
 
   const message = str(body?.message, 1000)
@@ -58,7 +69,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const record = await createRequest({
-    bookSlug: book.slug,
+    items,
     message,
     name,
     email,
@@ -73,10 +84,11 @@ export default defineEventHandler(async (event) => {
   const configured = useRuntimeConfig(event).public.siteUrl.replace(/\/$/, '')
   const origin = getRequestURL(event).origin || configured
   const withdrawUrl = `${origin}/give/withdraw?id=${record.id}`
-  await sendEmail(requestConfirmationEmail({ to: email, name, bookTitle: book.title, withdrawUrl }))
+  const titles = itemTitles(items)
+  await sendEmail(requestConfirmationEmail({ to: email, name, titles, withdrawUrl }))
   const press = pressEmailAddress()
   if (press) {
-    await sendEmail(pressNewRequestEmail({ to: press, name, bookTitle: book.title, message }))
+    await sendEmail(pressNewRequestEmail({ to: press, name, titles, message }))
   }
 
   return { id: record.id, status: record.status }

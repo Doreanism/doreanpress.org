@@ -14,12 +14,31 @@ export interface CartLine extends CartItem {
 
 const STORAGE_KEY = 'dorean-cart'
 
+/**
+ * Client only. The stored cart is adopted once — after mount, so the
+ * server-rendered markup matches — and every caller shares that one read.
+ * An explicit change always wins: if something empties the cart before the
+ * read happens (as `/checkout/success` does), storage is not read back over it.
+ */
+let adopted = false
+
 export function useCart() {
   const items = useState<CartItem[]>('cart', () => [])
 
-  // Hydrate from localStorage on the client and keep it in sync.
+  function persist() {
+    if (!import.meta.client) return
+    adopted = true
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items.value))
+    } catch {
+      // storage may be full or blocked; the in-memory cart still works
+    }
+  }
+
   if (import.meta.client) {
     onMounted(() => {
+      if (adopted) return
+      adopted = true
       try {
         const raw = localStorage.getItem(STORAGE_KEY)
         if (raw) items.value = JSON.parse(raw)
@@ -27,10 +46,6 @@ export function useCart() {
         // ignore malformed storage
       }
     })
-
-    watch(items, (val) => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(val))
-    }, { deep: true })
   }
 
   const lines = computed<CartLine[]>(() =>
@@ -60,6 +75,7 @@ export function useCart() {
     } else {
       items.value = [...items.value, { slug, quantity }]
     }
+    persist()
   }
 
   function setQuantity(slug: string, quantity: number) {
@@ -67,14 +83,17 @@ export function useCart() {
     if (q === 0) return remove(slug)
     const existing = items.value.find(i => i.slug === slug)
     if (existing) existing.quantity = q
+    persist()
   }
 
   function remove(slug: string) {
     items.value = items.value.filter(i => i.slug !== slug)
+    persist()
   }
 
   function clear() {
     items.value = []
+    persist()
   }
 
   return {
