@@ -150,14 +150,7 @@ function formatDate(iso: string) {
           </p>
         </div>
 
-        <!--
-          The message is whatever the reader typed, so it may be one
-          unpunctuated run with nowhere obvious to break. `wrap-anywhere` also
-          holds the grid track down, which `break-words` would not.
-        -->
-        <blockquote class="flex-1 border-l-2 border-primary/40 pl-3 text-sm text-toned italic hyphens-auto wrap-anywhere">
-          “{{ req.message }}”
-        </blockquote>
+        <RequestMessage :message="req.message" />
 
         <RequesterBadge :requester="req.requester" />
 
