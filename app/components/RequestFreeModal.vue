@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { findBook, summarizeTitles, type RequestItem } from '#shared/catalog'
+import { findBook, itemsCopies, MAX_REQUEST_COPIES, summarizeTitles, type RequestItem } from '#shared/catalog'
 
 // The whole set of items is posted as ONE request — an order a sponsor funds in
 // full — rather than a separate posting per title.
@@ -48,6 +48,11 @@ const titles = computed(() =>
     .map(item => findBook(item.slug)?.title)
     .filter((t): t is string => Boolean(t)))
 
+// The server rejects an oversized request outright, so say so before the reader
+// fills in an address for nothing.
+const copies = computed(() => itemsCopies(props.items))
+const overCap = computed(() => copies.value > MAX_REQUEST_COPIES)
+
 const summary = computed(() => {
   if (titles.value.length === 0) return ''
   if (titles.value.length > 2) return `these ${titles.value.length} books`
@@ -84,7 +89,7 @@ watch(() => open.value && loggedIn.value, (ready) => {
 }, { immediate: true })
 
 async function submit() {
-  if (props.items.length === 0) return
+  if (props.items.length === 0 || overCap.value) return
   loading.value = true
   try {
     const address = {
@@ -161,6 +166,15 @@ async function submit() {
         class="space-y-4"
         @submit.prevent="submit"
       >
+        <UAlert
+          v-if="overCap"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-triangle-alert"
+          :title="`That's ${copies} copies — a free request can be for up to ${MAX_REQUEST_COPIES}`"
+          description="Sponsors pay for the printing out of their own pocket, so we keep free requests small. Please trim your cart, or buy the extra copies."
+        />
+
         <div
           v-if="identity"
           class="flex items-center gap-3 rounded-lg bg-elevated/50 p-3"
@@ -305,6 +319,7 @@ async function submit() {
             icon="i-lucide-send"
             color="primary"
             :loading="loading"
+            :disabled="overCap"
           />
         </div>
       </form>

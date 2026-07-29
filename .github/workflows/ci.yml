@@ -15,20 +15,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-
       - name: Install node
         uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
-          cache: pnpm
+          cache: npm
 
+      # `npm ci` and not `npm install`: it installs exactly what
+      # package-lock.json pins, so CI checks the tree that actually ships.
       - name: Install dependencies
-        run: pnpm install
+        run: npm ci
 
       - name: Lint
-        run: pnpm run lint
+        run: npm run lint
 
       - name: Typecheck
-        run: pnpm run typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test

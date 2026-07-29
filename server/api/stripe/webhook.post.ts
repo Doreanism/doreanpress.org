@@ -2,9 +2,13 @@ import type Stripe from 'stripe'
 import { findBook, itemsCopies, itemTitles, limitItems, subtractItems, type RequestItem } from '#shared/catalog'
 import type { LuluLineItem, LuluShippingAddress, ShippingLevel } from '../../utils/lulu'
 
-// In-memory guard against duplicate webhook deliveries. For production-grade
-// idempotency, persist processed session ids (DB / KV) instead.
-const processed = new Set<string>()
+// Duplicate deliveries are kept out by a durable claim in the database — see
+// `server/utils/webhookEvents.ts` for why an in-memory guard cannot work here.
+//
+// The two fulfil paths below share a rule that the claim depends on: they throw
+// only while nothing has been printed yet, and swallow (loudly) anything that
+// goes wrong afterwards. A throw releases the claim and asks Stripe to retry,
+// so throwing after a print job exists would ship a second parcel.
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
@@ -36,16 +40,28 @@ export default defineEventHandler(async (event) => {
   }
 
   const session = stripeEvent.data.object as Stripe.Checkout.Session
-  if (processed.has(session.id)) {
+
+  // Claimed before any work, so two deliveries racing on separate instances
+  // cannot both fulfil.
+  if (!await claimEvent(session.id)) {
+    console.info(`[stripe webhook] session ${session.id} already handled; ignoring duplicate delivery.`)
     return { received: true, duplicate: true }
   }
-  processed.add(session.id)
 
-  if (session.metadata?.requestId) {
-    await fulfillSponsorship(session)
-  } else {
-    await fulfillOrder(stripe, session)
+  try {
+    if (session.metadata?.requestId) {
+      await fulfillSponsorship(session)
+    } else {
+      await fulfillOrder(stripe, session)
+    }
+  } catch (err) {
+    // Nothing was printed, so hand the claim back and let Stripe retry with
+    // its own backoff instead of dropping the order on the floor.
+    await releaseEvent(session.id)
+    console.error(`[stripe webhook] session ${session.id} failed before printing; released for retry:`, err)
+    throw createError({ statusCode: 500, statusMessage: 'Fulfilment failed; please retry.' })
   }
+
   return { received: true }
 })
 
@@ -114,16 +130,20 @@ async function fulfillSponsorship(session: Stripe.Checkout.Session) {
   const titles = itemTitles(funded)
   const remainingTitles = itemTitles(subtractItems(request.items, funded))
 
-  try {
-    const job = await createPrintJob({
-      externalId: session.id,
-      shippingAddress,
-      lineItems,
-      shippingLevel: 'MAIL'
-    })
-    const jobId = (job as { id?: string | number }).id
-    const status = (job as { status?: { name?: string } }).status?.name || 'CREATED'
+  // Nothing is printed yet, so a failure here is safe to retry.
+  const job = await createPrintJob({
+    externalId: session.id,
+    shippingAddress,
+    lineItems,
+    shippingLevel: 'MAIL'
+  })
+  const jobId = (job as { id?: string | number }).id
+  const status = (job as { status?: { name?: string } }).status?.name || 'CREATED'
 
+  // Past this point a parcel is committed. Nothing below may throw: a retry
+  // would print a second one, which is worse than any bookkeeping gap. Failures
+  // are logged loudly for reconciliation by hand instead.
+  try {
     await fulfilItems(request, funded, {
       sponsorEmail: session.customer_details?.email || undefined,
       stripeSessionId: session.id,
@@ -149,7 +169,7 @@ async function fulfillSponsorship(session: Stripe.Checkout.Session) {
       await sendEmail(sponsorThankYouEmail({ to: sponsorEmail, titles }))
     }
   } catch (err) {
-    console.error(`[sponsorship] FAILED to fulfil request ${requestId} for session ${session.id}:`, err)
+    console.error(`[sponsorship] request ${requestId} WAS PRINTED as Lulu job ${jobId} but the bookkeeping after it failed — the parcel is on its way, so reconcile the board by hand rather than re-running:`, err)
   }
 }
 
@@ -209,19 +229,17 @@ async function fulfillOrder(stripe: Stripe, summary: Stripe.Checkout.Session) {
   const shippingAmount = session.shipping_cost?.amount_total ?? 0
   const shippingLevel: ShippingLevel = shippingAmount >= 1299 ? 'EXPEDITED' : 'MAIL'
 
-  try {
-    const job = await createPrintJob({
-      externalId: session.id,
-      shippingAddress,
-      lineItems,
-      shippingLevel
-    })
-    const job_id = (job as { id?: string | number }).id
-    console.info(`[fulfilment] Lulu print job created for session ${session.id} (job ${job_id}, mock=${isLuluMocked()}).`)
-  } catch (err) {
-    // Don't 500 the webhook — log loudly so the order can be reconciled by hand.
-    console.error(`[fulfilment] FAILED to create Lulu print job for session ${session.id}:`, err)
-  }
+  // Throwing is deliberate: nothing has been printed, so the caller releases
+  // the claim and Stripe retries. Swallowing here is what used to lose an order
+  // outright whenever Lulu had a bad minute.
+  const job = await createPrintJob({
+    externalId: session.id,
+    shippingAddress,
+    lineItems,
+    shippingLevel
+  })
+  const job_id = (job as { id?: string | number }).id
+  console.info(`[fulfilment] Lulu print job created for session ${session.id} (job ${job_id}, mock=${isLuluMocked()}).`)
 }
 
 /** Read a `[{slug, quantity}]` snapshot out of session metadata. */
