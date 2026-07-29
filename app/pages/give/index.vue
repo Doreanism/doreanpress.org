@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { findBook, formatPrice, sponsorTotalCents, type RequestItem } from '#shared/catalog'
+import {
+  coversWholeRequest,
+  findBook,
+  formatPrice,
+  itemsCopies,
+  sponsorTotalCents,
+  type RequestItem
+} from '#shared/catalog'
 import type { PublicBookRequest } from '~~/server/utils/requests'
 
 useSeoMeta({
@@ -39,14 +46,42 @@ function isSponsorable(items: RequestItem[]) {
   return linesFor(items).length > 0
 }
 
-function totalCopies(items: RequestItem[]) {
-  return items.reduce((n, i) => n + i.quantity, 0)
+// A sponsor can cover a whole request or pick out part of it, so every card
+// carries its own selection — seeded with everything the reader asked for, since
+// giving the lot is the common case.
+const picks = reactive<Record<string, RequestItem[]>>({})
+
+watch(requests, (list) => {
+  for (const req of list ?? []) {
+    if (!picks[req.id]) picks[req.id] = linesFor(req.items).map(l => ({ ...l.item }))
+  }
+}, { immediate: true })
+
+function selection(req: PublicBookRequest): RequestItem[] {
+  return picks[req.id] ?? req.items
+}
+
+/** How the sponsor button reads, given how much of the request is picked. */
+function sponsorLabel(req: PublicBookRequest) {
+  const chosen = selection(req)
+  const price = formatPrice(sponsorTotalCents(chosen))
+  if (chosen.length === 0) return 'Pick a book to sponsor'
+  if (coversWholeRequest(req.items, chosen)) {
+    return `${req.items.length > 1 ? 'Sponsor this order' : 'Sponsor this copy'} · ${price}`
+  }
+  const copies = itemsCopies(chosen)
+  return `Sponsor ${copies} of ${itemsCopies(req.items)} copies · ${price}`
 }
 
 async function sponsor(id: string) {
+  const chosen = picks[id]
+  if (chosen && chosen.length === 0) return
   sponsoringId.value = id
   try {
-    const { url } = await $fetch<{ url: string | null }>(`/api/requests/${id}/sponsor`, { method: 'POST' })
+    const { url } = await $fetch<{ url: string | null }>(`/api/requests/${id}/sponsor`, {
+      method: 'POST',
+      body: { items: chosen }
+    })
     if (url) {
       await navigateTo(url, { external: true })
     } else {
@@ -70,7 +105,7 @@ function formatDate(iso: string) {
     <UPageHeader
       :ui="{ title: 'font-display' }"
       title="Give a Book"
-      description="Some readers have asked for books they cannot pay for. Choose a request and sponsor it in full — we’ll print it on demand and ship it directly to them. Freely you have received; freely give."
+      description="Some readers have asked for books they cannot pay for. Sponsor a whole request, or just the books you can — we print on demand and ship straight to them, and anything left over stays here for the next giver. Freely you have received; freely give."
     />
 
     <div
@@ -100,41 +135,17 @@ function formatDate(iso: string) {
         class="flex flex-col gap-4 rounded-lg ring ring-default bg-default p-5"
       >
         <div class="flex flex-col gap-3">
-          <div
-            v-for="line in linesFor(req.items)"
-            :key="line.item.slug"
-            class="flex gap-4"
-          >
-            <NuxtLink :to="`/catalog/${line.item.slug}`">
-              <img
-                :src="line.book.cover"
-                :alt="line.book.title"
-                class="h-24 w-auto rounded ring ring-default"
-              >
-            </NuxtLink>
-            <div class="min-w-0">
-              <NuxtLink
-                :to="`/catalog/${line.item.slug}`"
-                class="font-display font-semibold text-highlighted hover:text-primary"
-              >
-                {{ line.book.title }}
-              </NuxtLink>
-              <p class="text-sm text-muted">
-                {{ line.book.author }}
-              </p>
-              <p
-                v-if="line.item.quantity > 1"
-                class="text-sm text-toned"
-              >
-                {{ line.item.quantity }} copies
-              </p>
-            </div>
-          </div>
+          <RequestBooks
+            :items="req.items"
+            :model-value="selection(req)"
+            selectable
+            @update:model-value="(v: RequestItem[]) => picks[req.id] = v"
+          />
 
           <p class="text-xs text-dimmed">
             Requested {{ formatDate(req.createdAt) }}
             <span v-if="req.items.length > 1">
-              · {{ req.items.length }} titles, {{ totalCopies(req.items) }} copies
+              · {{ req.items.length }} titles, {{ itemsCopies(req.items) }} copies
             </span>
           </p>
         </div>
@@ -143,19 +154,29 @@ function formatDate(iso: string) {
           “{{ req.message }}”
         </blockquote>
 
+        <RequesterBadge :requester="req.requester" />
+
         <div class="flex flex-col gap-2">
           <UButton
-            :label="`${req.items.length > 1 ? 'Sponsor this order' : 'Sponsor this copy'} · ${formatPrice(sponsorTotalCents(req.items))}`"
+            :label="sponsorLabel(req)"
             icon="i-lucide-gift"
             color="primary"
             block
             :loading="sponsoringId === req.id"
-            :disabled="!isSponsorable(req.items)"
+            :disabled="!isSponsorable(req.items) || selection(req).length === 0"
             @click="sponsor(req.id)"
           />
           <p class="text-center text-xs text-dimmed">
-            Covers {{ req.items.length > 1 ? 'every book in the request' : 'the book' }} plus shipping — the whole
-            request is funded at once.
+            <template v-if="selection(req).length === 0">
+              Tick the books you’d like to cover — any you leave stay on the board for someone else.
+            </template>
+            <template v-else-if="coversWholeRequest(req.items, selection(req))">
+              Covers {{ req.items.length > 1 ? 'every book in the request' : 'the book' }} plus shipping, printed and
+              shipped in one parcel.
+            </template>
+            <template v-else>
+              Covers just the books you picked, plus shipping. The rest stays on the board for someone else.
+            </template>
           </p>
           <UButton
             :to="`/give/withdraw?id=${req.id}`"

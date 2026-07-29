@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { findBook } from '#shared/catalog'
+import { isSameAccount } from '#shared/identity'
 import type { PublicBookRequest } from '~~/server/utils/requests'
 
 useSeoMeta({
@@ -9,6 +9,7 @@ useSeoMeta({
 
 const route = useRoute()
 const toast = useToast()
+const { loggedIn, user } = useUserSession()
 
 const id = computed(() => String(route.query.id || ''))
 const removing = ref(false)
@@ -19,11 +20,16 @@ const { data: request, error } = await useFetch<PublicBookRequest>(
   { immediate: !!id.value }
 )
 
-// A request is a whole order, so the confirmation lists every title in it.
-const lines = computed(() =>
-  (request.value?.items ?? [])
-    .map(item => ({ item, book: findBook(item.slug) }))
-    .filter((l): l is { item: typeof l.item, book: NonNullable<typeof l.book> } => Boolean(l.book)))
+// Mirrors what the server enforces on the DELETE — this only decides which
+// panel to show. The account is checked against the public identity on the
+// request, which is the same thing the board displays.
+const isOwner = computed(() => {
+  if (!request.value) return false
+  // A posting from before sign-in existed has no account to match, so the
+  // unguessable link in the confirmation email remains its only key.
+  if (!request.value.requester) return true
+  return isSameAccount(user.value?.identity, request.value.requester)
+})
 
 async function withdraw() {
   if (!id.value) return
@@ -77,6 +83,39 @@ async function withdraw() {
         />
       </div>
 
+      <!-- Someone else's request, or nobody signed in yet -->
+      <div
+        v-else-if="request && !isOwner"
+        class="flex flex-col gap-5 rounded-lg ring ring-default bg-default p-6"
+      >
+        <template v-if="loggedIn">
+          <UIcon
+            name="i-lucide-shield-x"
+            class="size-10 text-dimmed"
+          />
+          <p class="text-toned">
+            This request belongs to a different account. Only the reader who posted it can
+            take it down — sign out and back in with the account you used, if it was you.
+          </p>
+          <RequesterBadge :requester="request.requester" />
+          <UButton
+            to="/give"
+            label="Back to Give a Book"
+            color="neutral"
+            variant="subtle"
+            class="self-start"
+          />
+        </template>
+
+        <template v-else>
+          <p class="text-toned">
+            Sign in with the account you posted this request from and you can take it off
+            the board.
+          </p>
+          <SignInPanel />
+        </template>
+      </div>
+
       <!-- Confirm removal -->
       <div
         v-else-if="request"
@@ -87,33 +126,7 @@ async function withdraw() {
           sponsors will no longer see it. You can submit a new request any time.
         </p>
 
-        <div class="flex flex-col gap-3">
-          <div
-            v-for="line in lines"
-            :key="line.item.slug"
-            class="flex gap-4"
-          >
-            <img
-              :src="line.book.cover"
-              :alt="line.book.title"
-              class="h-24 w-auto rounded ring ring-default"
-            >
-            <div class="min-w-0">
-              <p class="font-display font-semibold text-highlighted">
-                {{ line.book.title }}
-              </p>
-              <p class="text-sm text-muted">
-                {{ line.book.author }}
-              </p>
-              <p
-                v-if="line.item.quantity > 1"
-                class="text-sm text-toned"
-              >
-                {{ line.item.quantity }} copies
-              </p>
-            </div>
-          </div>
-        </div>
+        <RequestBooks :items="request.items" />
 
         <blockquote class="border-l-2 border-primary/40 pl-3 text-sm text-toned italic">
           “{{ request.message }}”

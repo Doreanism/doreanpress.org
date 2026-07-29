@@ -1,4 +1,5 @@
 import { findBook, itemTitles, type RequestItem } from '#shared/catalog'
+import { accountKey } from '#shared/identity'
 
 interface Body {
   items?: { slug?: string, quantity?: number }[]
@@ -19,6 +20,27 @@ interface Body {
 const str = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max)
 
 export default defineEventHandler(async (event) => {
+  // A free book goes to a person, so a request has to come from one. Signing in
+  // with a public account is what puts a name and a face on the board for the
+  // sponsor to look at, and what makes the limit below mean anything.
+  const { user } = await getUserSession(event)
+  if (!user) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Please sign in with a public account before asking for a book.'
+    })
+  }
+
+  // One open request per account. Without this the sign-in would only slow a
+  // scammer down once; with it, every extra posting costs another real account.
+  const waiting = await findOpenRequestByAccount(accountKey(user.identity))
+  if (waiting) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'You already have a request on the Give a Book board. Please wait for it to be sponsored, or remove it before posting another.'
+    })
+  }
+
   const body = await readBody<Body>(event)
 
   // Re-derive every line from the catalog and merge duplicate slugs, so the
@@ -71,6 +93,9 @@ export default defineEventHandler(async (event) => {
   const record = await createRequest({
     items,
     message,
+    // Snapshotted, not looked up later: the board should show the account as it
+    // was when the reader stood behind the request, even if they rename it.
+    requester: user.identity,
     name,
     email,
     phone,
@@ -88,7 +113,7 @@ export default defineEventHandler(async (event) => {
   await sendEmail(requestConfirmationEmail({ to: email, name, titles, withdrawUrl }))
   const press = pressEmailAddress()
   if (press) {
-    await sendEmail(pressNewRequestEmail({ to: press, name, titles, message }))
+    await sendEmail(pressNewRequestEmail({ to: press, name, titles, message, requester: user.identity }))
   }
 
   return { id: record.id, status: record.status }

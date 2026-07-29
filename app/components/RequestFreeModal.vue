@@ -19,6 +19,29 @@ const emit = defineEmits<{ submitted: [] }>()
 const open = ref(false)
 const loading = ref(false)
 const toast = useToast()
+const route = useRoute()
+const router = useRouter()
+
+// Asking for a free book requires a public account behind it. Until there is
+// one the modal shows the sign-in panel in place of the form.
+const { loggedIn, user, fetch: refreshSession } = useUserSession()
+const identity = computed(() => user.value?.identity)
+
+// Signing in means leaving the site, so the modal can't survive the round trip
+// on its own. It asks the provider to come back to this page with a marker and
+// reopens itself — otherwise the reader lands back on the cart wondering
+// whether anything happened.
+const REOPEN_FLAG = 'request'
+
+const signInRedirect = computed(() =>
+  router.resolve({ path: route.path, query: { ...route.query, [REOPEN_FLAG]: '1' } }).fullPath)
+
+onMounted(() => {
+  if (route.query[REOPEN_FLAG] !== '1') return
+  open.value = true
+  const { [REOPEN_FLAG]: _flag, ...query } = route.query
+  router.replace({ query })
+})
 
 const titles = computed(() =>
   props.items
@@ -50,6 +73,15 @@ function reset() {
     line1: '', line2: '', city: '', state: '', postalCode: '', country: 'US'
   })
 }
+
+// The provider already told us a name, and usually an email. Filling blanks
+// only, so it can never overwrite something the reader has typed — and so the
+// shipping name stays theirs to change when it differs from the account.
+watch(() => open.value && loggedIn.value, (ready) => {
+  if (!ready || !user.value) return
+  if (!form.name) form.name = user.value.identity.name
+  if (!form.email && user.value.email) form.email = user.value.email
+}, { immediate: true })
 
 async function submit() {
   if (props.items.length === 0) return
@@ -87,8 +119,12 @@ async function submit() {
     open.value = false
     emit('submitted')
   } catch (err) {
-    const message = (err as { data?: { statusMessage?: string } })?.data?.statusMessage || 'Something went wrong. Please try again.'
+    const failure = err as { statusCode?: number, data?: { statusMessage?: string } }
+    const message = failure?.data?.statusMessage || 'Something went wrong. Please try again.'
     toast.add({ title: 'Could not submit', description: message, icon: 'i-lucide-triangle-alert', color: 'error' })
+    // A lapsed session is the one failure the form can't explain on its own —
+    // re-reading it swaps the form back for the sign-in panel.
+    if (failure?.statusCode === 401) await refreshSession()
   } finally {
     loading.value = false
   }
@@ -99,7 +135,9 @@ async function submit() {
   <UModal
     v-model:open="open"
     :title="items.length > 1 ? 'Request these books' : 'Request a free copy'"
-    :description="`Tell us why you’d like ${summary}. Your message appears on the Give a Book board so a sponsor can cover ${items.length > 1 ? 'the whole order' : 'your copy'}. Your contact and address stay private.`"
+    :description="loggedIn
+      ? `Tell us why you’d like ${summary}. Your message appears on the Give a Book board so a sponsor can cover ${items.length > 1 ? 'the whole order' : 'your copy'}. Your contact and address stay private.`
+      : `Before you ask for ${summary}, sign in with a public account so sponsors can see a real person is behind the request.`"
     :ui="{ content: 'max-w-xl' }"
   >
     <UButton
@@ -113,10 +151,35 @@ async function submit() {
     />
 
     <template #body>
+      <SignInPanel
+        v-if="!loggedIn"
+        :redirect="signInRedirect"
+      />
+
       <form
+        v-else
         class="space-y-4"
         @submit.prevent="submit"
       >
+        <div
+          v-if="identity"
+          class="flex items-center gap-3 rounded-lg bg-elevated/50 p-3"
+        >
+          <UAvatar
+            :src="identity.avatarUrl"
+            :alt="identity.name"
+            size="sm"
+          />
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium text-highlighted">
+              {{ identity.name }}
+            </p>
+            <p class="text-xs text-muted">
+              Shown on the board beside your message, so sponsors know who they're giving to.
+            </p>
+          </div>
+        </div>
+
         <UFormField
           label="Your request"
           required

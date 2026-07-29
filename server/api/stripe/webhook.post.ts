@@ -1,5 +1,5 @@
 import type Stripe from 'stripe'
-import { findBook, itemTitles } from '#shared/catalog'
+import { findBook, itemsCopies, itemTitles, limitItems, subtractItems, type RequestItem } from '#shared/catalog'
 import type { LuluLineItem, LuluShippingAddress, ShippingLevel } from '../../utils/lulu'
 
 // In-memory guard against duplicate webhook deliveries. For production-grade
@@ -62,6 +62,18 @@ async function fulfillSponsorship(session: Stripe.Checkout.Session) {
     return
   }
 
+  // Print what this sponsor paid for, clamped to what the request still holds —
+  // a second sponsor may have covered some of the same copies while this
+  // checkout was open. Sessions created before partial gifts existed carry no
+  // item snapshot and funded the whole request.
+  const paidFor = parseItems(session.metadata?.items)
+  const funded = paidFor.length > 0 ? limitItems(request.items, paidFor) : request.items
+
+  if (funded.length === 0) {
+    console.error(`[sponsorship] session ${session.id} paid for copies of request ${requestId} that are already fulfilled; nothing to print — reconcile by hand (refund or reprint).`)
+    return
+  }
+
   const shippingAddress: LuluShippingAddress = {
     name: request.name,
     street1: request.address.line1,
@@ -74,9 +86,10 @@ async function fulfillSponsorship(session: Stripe.Checkout.Session) {
     email: request.email
   }
 
-  // The whole order prints as one job, so it reaches the reader in one parcel.
+  // Everything one sponsor funded prints as a single job, so it reaches the
+  // reader in one parcel.
   const lineItems: LuluLineItem[] = []
-  for (const item of request.items) {
+  for (const item of funded) {
     const book = findBook(item.slug)
     if (!book) {
       console.error(`[sponsorship] request ${requestId} references unknown book ${item.slug}; skipping that line.`)
@@ -98,7 +111,8 @@ async function fulfillSponsorship(session: Stripe.Checkout.Session) {
     return
   }
 
-  const titles = itemTitles(request.items)
+  const titles = itemTitles(funded)
+  const remainingTitles = itemTitles(subtractItems(request.items, funded))
 
   try {
     const job = await createPrintJob({
@@ -110,21 +124,24 @@ async function fulfillSponsorship(session: Stripe.Checkout.Session) {
     const jobId = (job as { id?: string | number }).id
     const status = (job as { status?: { name?: string } }).status?.name || 'CREATED'
 
-    await updateRequest(request.id, {
-      status: 'fulfilled',
+    await fulfilItems(request, funded, {
       sponsorEmail: session.customer_details?.email || undefined,
       stripeSessionId: session.id,
       luluJobId: jobId,
       shippingStatus: status,
       fulfilledAt: new Date().toISOString()
     })
-    console.info(`[sponsorship] request ${requestId} fulfilled via Lulu job ${jobId} (mock=${isLuluMocked()}).`)
+    console.info(
+      remainingTitles.length > 0
+        ? `[sponsorship] request ${requestId} partly sponsored (${itemsCopies(funded)} of ${itemsCopies(request.items)} copies) via Lulu job ${jobId}; the rest stays on the board (mock=${isLuluMocked()}).`
+        : `[sponsorship] request ${requestId} fulfilled via Lulu job ${jobId} (mock=${isLuluMocked()}).`)
 
-    // Close the loop: tell the requester their order is coming, thank the sponsor.
+    // Close the loop: tell the requester what's coming, thank the sponsor.
     await sendEmail(requestFulfilledEmail({
       to: request.email,
       name: request.name,
       titles,
+      remainingTitles,
       city: request.address.city
     }))
     const sponsorEmail = session.customer_details?.email
@@ -155,7 +172,7 @@ async function fulfillOrder(stripe: Stripe, summary: Stripe.Checkout.Session) {
     return
   }
 
-  const cart = parseCart(session.metadata?.cart)
+  const cart = parseItems(session.metadata?.cart)
   const lineItems: LuluLineItem[] = []
   for (const item of cart) {
     const book = findBook(item.slug)
@@ -207,7 +224,8 @@ async function fulfillOrder(stripe: Stripe, summary: Stripe.Checkout.Session) {
   }
 }
 
-function parseCart(raw: string | undefined): { slug: string, quantity: number }[] {
+/** Read a `[{slug, quantity}]` snapshot out of session metadata. */
+function parseItems(raw: string | undefined): RequestItem[] {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)

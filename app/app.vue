@@ -1,6 +1,10 @@
 <script setup lang="ts">
 const { count } = useCart()
 
+// Sign-in happens by leaving the site and coming back, so a failure surfaces as
+// a flag on the return URL rather than a rejected fetch.
+useAuthFeedback()
+
 const nav = [
   { label: 'Home', to: '/', icon: 'i-lucide-home' },
   { label: 'Catalog', to: '/catalog', icon: 'i-lucide-library' },
@@ -52,6 +56,8 @@ useSeoMeta({
         <ThemePicker />
 
         <UColorModeButton />
+
+        <UserMenu />
 
         <UChip
           :text="count"

@@ -1,9 +1,17 @@
 import type Stripe from 'stripe'
-import { findBook, formatPrice, itemsSubtotalCents, SPONSOR_SHIPPING_CENTS } from '#shared/catalog'
+import {
+  findBook,
+  formatPrice,
+  itemsSubtotalCents,
+  limitItems,
+  SPONSOR_SHIPPING_CENTS,
+  type RequestItem
+} from '#shared/catalog'
 
-// A sponsor covers a request in full — every title the reader asked for, plus
-// one shipping charge for the single parcel it all ships in. Requests are never
-// sponsorable book-by-book: a half-funded order can't be printed or shipped.
+// A sponsor covers a request in full, or picks out part of it — a few titles, or
+// fewer copies than were asked for. Whatever they fund prints and ships as its
+// own parcel (hence one shipping charge per sponsorship); anything left over
+// stays on the board for the next giver. Sending no selection funds everything.
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id') || ''
   const request = await getRequest(id)
@@ -12,11 +20,20 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'This request is no longer available.' })
   }
 
+  const body = await readBody<{ items?: RequestItem[] }>(event).catch(() => ({} as { items?: RequestItem[] }))
+  const chosen = Array.isArray(body?.items) && body.items.length > 0
+    ? limitItems(request.items, body.items)
+    : request.items
+
+  if (chosen.length === 0) {
+    throw createError({ statusCode: 400, statusMessage: 'Choose at least one book to sponsor.' })
+  }
+
   const config = useRuntimeConfig()
   const siteUrl = config.public.siteUrl.replace(/\/$/, '')
 
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = []
-  for (const item of request.items) {
+  for (const item of chosen) {
     const book = findBook(item.slug)
     if (!book) continue
     lineItems.push({
@@ -43,7 +60,7 @@ export default defineEventHandler(async (event) => {
     price_data: {
       currency: 'usd',
       unit_amount: SPONSOR_SHIPPING_CENTS,
-      product_data: { name: 'Shipping', description: 'One parcel for the whole order.' }
+      product_data: { name: 'Shipping', description: 'One parcel for the books you sponsor.' }
     }
   })
 
@@ -55,9 +72,10 @@ export default defineEventHandler(async (event) => {
     // No address collection — the order ships to the requester's stored address.
     metadata: {
       requestId: request.id,
-      // Snapshot of what was funded, for reconciling against the board later.
-      items: JSON.stringify(request.items),
-      subtotalCents: String(itemsSubtotalCents(request.items))
+      // Exactly what this sponsor funded. The webhook prints from this, not from
+      // the request, so a partial gift only ever ships the part it paid for.
+      items: JSON.stringify(chosen),
+      subtotalCents: String(itemsSubtotalCents(chosen))
     },
     success_url: `${siteUrl}/give?sponsored=1`,
     cancel_url: `${siteUrl}/give`

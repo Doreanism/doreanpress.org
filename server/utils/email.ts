@@ -3,6 +3,7 @@
 // instead of sent, so the pay-it-forward loop works without credentials.
 
 import { summarizeTitles } from '#shared/catalog'
+import { describeIdentity, type RequesterIdentity } from '#shared/identity'
 
 export interface EmailMessage {
   to: string
@@ -134,27 +135,53 @@ ${SIGNATURE}`
   }
 }
 
-export function requestFulfilledEmail(params: { to: string, name: string, titles: string[], city?: string }): EmailMessage {
+// A sponsor may cover only part of a request, so `titles` is what was funded and
+// `remainingTitles` is whatever is still waiting on the board.
+export function requestFulfilledEmail(params: {
+  to: string
+  name: string
+  titles: string[]
+  remainingTitles?: string[]
+  city?: string
+}): EmailMessage {
   const { to, name, titles, city } = params
+  const remaining = params.remainingTitles ?? []
+  const partial = remaining.length > 0
   const many = titles.length > 1
   const dest = city ? ` to ${city}` : ''
   const listText = many ? `\n\n${titles.map(t => `  · ${t}`).join('\n')}` : ''
+  const sponsored = partial
+    ? `part of your request — ${quotedPlain(titles)}`
+    : many ? 'your whole request' : `your copy of ${quotedPlain(titles)}`
+  const sponsoredHtml = partial
+    ? `part of your request — ${quoted(titles)}`
+    : many ? 'your whole request' : `your copy of ${quoted(titles)}`
+  const stillWaiting = partial
+    ? `\n\n${remaining.length === 1 ? quotedPlain(remaining) : `The rest of your request (${quotedPlain(remaining)})`} ${remaining.length === 1 ? 'is' : 'are'} still on the board, waiting for another sponsor. We’ll email you again when someone covers ${remaining.length === 1 ? 'it' : 'them'}.`
+    : ''
   const text = `Hi ${name},
 
-Good news — a reader has sponsored ${many ? 'your whole request' : `your copy of ${quotedPlain(titles)}`}.${listText}
+Good news — a reader has sponsored ${sponsored}.${listText}
 
-${many ? 'The books are' : 'It’s'} being printed on demand and shipped${dest} now, together in one parcel. Please allow some time for printing and delivery.
+${many ? 'The books are' : 'It’s'} being printed on demand and shipped${dest} now, together in one parcel. Please allow some time for printing and delivery.${stillWaiting}
 
 Freely you have received; freely give.
 
 ${SIGNATURE}`
   return {
     to,
-    subject: many ? `Someone sponsored your request (${titles.length} books)` : `Someone sponsored ${orderNoun(titles)}`,
+    // No count in the partial subject: one title can be split across what was
+    // funded and what is still waiting, so "N of M" would be misleading.
+    subject: partial
+      ? 'Someone sponsored part of your request'
+      : many ? `Someone sponsored your request (${titles.length} books)` : `Someone sponsored ${orderNoun(titles)}`,
     text,
     html: layout(`<p>Hi ${name},</p>
-<p>Good news — a reader has <strong>sponsored ${many ? 'your whole request' : `your copy of ${quoted(titles)}`}</strong>.</p>${titleList(titles)}
-<p>${many ? 'The books are' : 'It’s'} being printed on demand and shipped${dest} now, together in one parcel. Please allow some time for printing and delivery.</p>
+<p>Good news — a reader has <strong>sponsored ${sponsoredHtml}</strong>.</p>${titleList(titles)}
+<p>${many ? 'The books are' : 'It’s'} being printed on demand and shipped${dest} now, together in one parcel. Please allow some time for printing and delivery.</p>${partial
+  ? `
+<p>${remaining.length === 1 ? quoted(remaining) : `The rest of your request (${quoted(remaining)})`} ${remaining.length === 1 ? 'is' : 'are'} still on the board, waiting for another sponsor. We’ll email you again when someone covers ${remaining.length === 1 ? 'it' : 'them'}.</p>`
+  : ''}
 <p><em>Freely you have received; freely give.</em></p>`)
   }
 }
@@ -194,7 +221,7 @@ export function sponsorThankYouEmail(params: { to: string, titles: string[] }): 
   const listText = many ? `\n\n${titles.map(t => `  · ${t}`).join('\n')}` : ''
   const text = `Thank you.
 
-Because of your gift, ${many ? 'a full order of books is' : `a copy of ${quotedPlain(titles)} is`} on its way to a reader who asked for ${many ? 'them' : 'one'}.${listText}
+Because of your gift, ${many ? `${titles.length} books are` : `a copy of ${quotedPlain(titles)} is`} on its way to a reader who asked for ${many ? 'them' : 'one'}.${listText}
 
 You've helped keep the gospel freely given.
 
@@ -205,18 +232,23 @@ ${SIGNATURE}`
     subject: many ? `Thank you for giving ${titles.length} books` : `Thank you for giving ${quoted(titles)}`,
     text,
     html: layout(`<p>Thank you.</p>
-<p>Because of your gift, ${many ? '<strong>a full order of books</strong> is' : `a copy of <strong>${quoted(titles)}</strong> is`} on its way to a reader who asked for ${many ? 'them' : 'one'}.</p>${titleList(titles)}
+<p>Because of your gift, ${many ? `<strong>${titles.length} books</strong> are` : `a copy of <strong>${quoted(titles)}</strong> is`} on its way to a reader who asked for ${many ? 'them' : 'one'}.</p>${titleList(titles)}
 <p>You’ve helped keep the gospel freely given.</p>
 <p>With gratitude,</p>`)
   }
 }
 
-export function pressNewRequestEmail(params: { to: string, name: string, titles: string[], message: string }): EmailMessage {
-  const { to, name, titles, message } = params
+// `requester` is the account the reader signed in with, included so the press
+// can spot a pattern of abuse across postings that the shipping name alone
+// would hide.
+export function pressNewRequestEmail(params: { to: string, name: string, titles: string[], message: string, requester?: RequesterIdentity | null }): EmailMessage {
+  const { to, name, titles, message, requester } = params
+  const account = describeIdentity(requester)
   const text = `New request on the Give a Book board.
 
 ${titles.length > 1 ? `Books:\n${titles.map(t => `  · ${t}`).join('\n')}` : `Book: ${titles[0] ?? '(unknown)'}`}
 From: ${name}
+Account: ${account}${requester?.profileUrl ? `\n${requester.profileUrl}` : ''}
 Message: ${message}`
   return {
     to,
@@ -224,7 +256,8 @@ Message: ${message}`
     text,
     html: layout(`<p><strong>New request on the Give a Book board.</strong></p>
 <p><strong>${titles.length > 1 ? 'Books' : 'Book'}:</strong> ${summarizeTitles(titles)}<br/>
-<strong>From:</strong> ${name}</p>
+<strong>From:</strong> ${name}<br/>
+<strong>Account:</strong> ${requester?.profileUrl ? `<a href="${requester.profileUrl}">${account}</a>` : account}</p>
 <blockquote style="border-left:3px solid #ccc;padding-left:12px;color:#57534e">${message}</blockquote>`)
   }
 }

@@ -2,7 +2,8 @@
 export default defineNuxtConfig({
   modules: [
     '@nuxt/eslint',
-    '@nuxt/ui'
+    '@nuxt/ui',
+    'nuxt-auth-utils'
   ],
 
   devtools: {
@@ -31,6 +32,14 @@ export default defineNuxtConfig({
     fromEmail: 'Dorean Press <hello@doreanpress.org>',
     // Optional: notify the press when a new request is posted.
     pressEmail: '',
+    // Public accounts a reader can sign in with to post a free-book request.
+    // Each is optional: a provider with no credentials simply isn't offered, so
+    // the site runs with one, two, all three — or, in dev, the mock provider.
+    oauth: {
+      x: { clientId: '', clientSecret: '' },
+      facebook: { clientId: '', clientSecret: '' },
+      linkedin: { clientId: '', clientSecret: '' }
+    },
     public: {
       siteUrl: 'http://localhost:3000',
       stripePublishableKey: ''

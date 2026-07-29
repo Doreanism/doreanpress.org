@@ -1,9 +1,11 @@
-// Edit an open request. The requester updates their own posting via the
-// unguessable UUID (the same capability used to view/withdraw it).
+// Edit an open request. Only the account that posted it may change it — see
+// `requireRequestOwner`.
 //
 // Partial update: only the fields present in the body are changed. Lifecycle
-// fields (status, sponsor, fulfilment) are never editable here. A request
-// that's already been sponsored is frozen — a copy is in flight.
+// fields (status, sponsor, fulfilment) are never editable here, and neither is
+// `requester` — the account that stands behind a posting is fixed at the moment
+// it was made. A request that's already been sponsored is frozen: a copy is in
+// flight.
 interface Body {
   message?: string
   name?: string
@@ -28,6 +30,8 @@ export default defineEventHandler(async (event) => {
   if (!request) {
     throw createError({ statusCode: 404, statusMessage: 'This request no longer exists.' })
   }
+
+  await requireRequestOwner(event, request)
 
   if (request.status !== 'open') {
     throw createError({

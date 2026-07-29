@@ -171,9 +171,10 @@ export function formatPounds(totalOz: number): string {
 
 // ── Pay-it-forward requests ──────────────────────────────────────────────
 //
-// A request is an *order*: one or more titles, requested and sponsored as a
-// unit. These helpers live here so the board, the Stripe session and the
-// emails all price and describe an order the same way.
+// A request is an *order*: one or more titles a reader asked for. A sponsor may
+// cover the whole thing or pick out part of it, so anything unfunded stays on
+// the board for someone else. These helpers live here so the board, the Stripe
+// session and the emails all price and describe a selection the same way.
 
 /** One line of a book request: a catalog slug and how many copies. */
 export interface RequestItem {
@@ -198,6 +199,53 @@ export function itemsSubtotalCents(items: RequestItem[]): number {
 /** What a sponsor pays to cover a whole request: books plus one shipping charge. */
 export function sponsorTotalCents(items: RequestItem[]): number {
   return itemsSubtotalCents(items) + SPONSOR_SHIPPING_CENTS
+}
+
+/** Total copies across a set of request lines. */
+export function itemsCopies(items: RequestItem[]): number {
+  return items.reduce((n, item) => n + item.quantity, 0)
+}
+
+/**
+ * Narrow a chosen selection down to what a request actually still holds: only
+ * requested slugs, never more copies than remain, no duplicate lines. Untrusted
+ * input (a sponsor's POST, a webhook replayed after someone else gave) passes
+ * through here before anything is charged or printed.
+ */
+export function limitItems(available: RequestItem[], chosen: RequestItem[]): RequestItem[] {
+  const wanted = new Map<string, number>()
+  for (const item of chosen) {
+    const quantity = Math.floor(Number(item?.quantity))
+    if (!Number.isFinite(quantity) || quantity < 1) continue
+    wanted.set(item.slug, (wanted.get(item.slug) ?? 0) + quantity)
+  }
+
+  return available
+    .map((item) => {
+      const quantity = Math.min(item.quantity, wanted.get(item.slug) ?? 0)
+      return quantity > 0 ? { slug: item.slug, quantity } : null
+    })
+    .filter((i): i is RequestItem => i !== null)
+}
+
+/** What is left of a request once some copies have been sponsored. */
+export function subtractItems(items: RequestItem[], funded: RequestItem[]): RequestItem[] {
+  const taken = new Map<string, number>()
+  for (const item of funded) {
+    taken.set(item.slug, (taken.get(item.slug) ?? 0) + item.quantity)
+  }
+
+  return items
+    .map((item) => {
+      const quantity = item.quantity - Math.min(item.quantity, taken.get(item.slug) ?? 0)
+      return quantity > 0 ? { slug: item.slug, quantity } : null
+    })
+    .filter((i): i is RequestItem => i !== null)
+}
+
+/** True when a selection covers every copy of every title in the request. */
+export function coversWholeRequest(items: RequestItem[], selected: RequestItem[]): boolean {
+  return subtractItems(items, selected).length === 0
 }
 
 /** Titles of a request's books, in the order they were requested. */

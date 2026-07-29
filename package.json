@@ -17,6 +17,7 @@
     "@nuxt/content": "^3.14.0",
     "@nuxt/ui": "^4.9.0",
     "nuxt": "^4.4.8",
+    "nuxt-auth-utils": "^0.5.29",
     "stripe": "^22.3.0",
     "tailwindcss": "^4.3.1"
   },
