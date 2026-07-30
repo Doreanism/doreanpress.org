@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { findBook, itemsCopies, MAX_REQUEST_COPIES, summarizeTitles, type RequestItem } from '#shared/catalog'
+import { providerLabel } from '#shared/identity'
 
 // The whole set of items is posted as ONE request — an order a sponsor funds in
 // full — rather than a separate posting per title.
@@ -128,15 +129,39 @@ onMounted(() => {
   router.replace({ query })
 })
 
-// The provider already told us a name, and usually an email. Filling blanks
-// only, so it can never overwrite something the reader has typed — and so the
-// shipping name stays theirs to change when it differs from the account.
-watch(() => open.value && verified.value, (ready) => {
-  const held = proof.value
-  if (!ready || !held) return
-  if (!form.name) form.name = held.identity.name
-  if (!form.email && held.email) form.email = held.email
+// The provider already told us a name, and usually an email, so those fields
+// start filled. What we filled is remembered, which is what lets a later account
+// switch update them — while anything the reader has since edited is left alone,
+// because a shipping name is often not the name on the account.
+const prefilled = reactive({ name: '', email: '' })
+
+watch([() => open.value, proof], ([isOpen, held]) => {
+  if (!isOpen || !held) return
+  if (!form.name || form.name === prefilled.name) {
+    form.name = held.identity.name
+    prefilled.name = form.name
+  }
+  if (held.email && (!form.email || form.email === prefilled.email)) {
+    form.email = held.email
+    prefilled.email = form.email
+  }
 }, { immediate: true })
+
+// Discard the proof so the challenge comes back and another account can be
+// picked. The draft is untouched — only the account changes.
+const switching = ref(false)
+
+async function useDifferentAccount() {
+  switching.value = true
+  try {
+    await $fetch('/api/verify/discard', { method: 'POST' })
+  } catch {
+    // Even if the call fails, re-reading below tells us where we actually stand.
+  } finally {
+    await refreshProof()
+    switching.value = false
+  }
+}
 
 async function submit() {
   if (props.items.length === 0 || overCap.value || !verified.value) return
@@ -231,7 +256,7 @@ async function submit() {
 
         <div
           v-if="identity"
-          class="flex items-center gap-3 rounded-lg bg-elevated/50 p-3"
+          class="flex flex-wrap items-center gap-3 rounded-lg bg-elevated/50 p-3"
         >
           <UAvatar
             :src="identity.avatarUrl"
@@ -245,12 +270,24 @@ async function submit() {
                 name="i-lucide-badge-check"
                 class="size-4 shrink-0 text-primary"
               />
+              <span class="truncate text-xs font-normal text-dimmed">
+                {{ identity.handle ? `@${identity.handle}` : providerLabel(identity.provider) }}
+              </span>
             </p>
             <p class="text-xs text-muted">
               Verified, and shown on the board beside your message so sponsors know who
               they're giving to.
             </p>
           </div>
+          <UButton
+            label="Use a different account"
+            icon="i-lucide-repeat-2"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            :loading="switching"
+            @click="useDifferentAccount"
+          />
         </div>
 
         <IdentityChallenge

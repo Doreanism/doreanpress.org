@@ -64,7 +64,19 @@ export async function completeChallenge(
   identity: Omit<RequesterIdentity, 'verifiedAt'>,
   email?: string
 ) {
-  await setUserSession(event, {
+  // A reader can arrive here already holding a proof — they picked the wrong
+  // account and want another. Burn the old one: abandoning a proof should leave
+  // it as dead as spending it, rather than merely out of this browser's reach.
+  const previous = await getUserSession(event)
+  if (previous.proof?.id) {
+    await burnProof(event, previous.proof.id)
+  }
+
+  // `replaceUserSession`, not `setUserSession`: the latter merges the new value
+  // over the old one, so swapping accounts would inherit whatever the new
+  // provider leaves undefined — an X proof carrying the previous account's email
+  // and avatar. The proof must be exactly one account's.
+  await replaceUserSession(event, {
     proof: {
       id: crypto.randomUUID(),
       identity: { ...identity, verifiedAt: new Date().toISOString() },
