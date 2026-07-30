@@ -22,8 +22,10 @@ const toast = useToast()
 const route = useRoute()
 const router = useRouter()
 
-// Asking for a free book requires a public account behind it. Until the reader
-// has proved one, the modal shows the challenge in place of the form.
+// Asking for a free book requires a public account behind it, so that is the
+// first thing the form asks for — see the template. The rest of the form stays
+// visible underneath, because a reader deciding whether to bother should be able
+// to see everything being asked of them, not just the gate.
 const { proof, identity, verified, refresh: refreshProof } = useIdentityProof()
 
 // The challenge means leaving the site, so the modal can't survive the round
@@ -34,13 +36,6 @@ const REOPEN_FLAG = 'request'
 
 const challengeRedirect = computed(() =>
   router.resolve({ path: route.path, query: { ...route.query, [REOPEN_FLAG]: '1' } }).fullPath)
-
-onMounted(() => {
-  if (route.query[REOPEN_FLAG] !== '1') return
-  open.value = true
-  const { [REOPEN_FLAG]: _flag, ...query } = route.query
-  router.replace({ query })
-})
 
 const titles = computed(() =>
   props.items
@@ -78,6 +73,61 @@ function reset() {
   })
 }
 
+// Verifying means leaving the site part-way through the form, so the draft is
+// held across the round trip. sessionStorage rather than localStorage on
+// purpose: a draft holds a home address, and this way it dies with the tab.
+const DRAFT_KEY = 'dorean-request-draft'
+const DRAFT_TTL_MS = 60 * 60 * 1000
+
+/** Anything typed yet? Keeps an empty form from leaving a pointless draft. */
+const hasContent = () =>
+  Object.entries(form).some(([field, value]) => value !== '' && !(field === 'country' && value === 'US'))
+
+function dropDraft() {
+  if (!import.meta.client) return
+  try {
+    sessionStorage.removeItem(DRAFT_KEY)
+  } catch {
+    // storage blocked; nothing was saved to remove
+  }
+}
+
+function saveDraft() {
+  if (!import.meta.client) return
+  if (!hasContent()) return dropDraft()
+  try {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ at: Date.now(), form }))
+  } catch {
+    // storage full or blocked; the form still works, the draft just won't survive
+  }
+}
+
+function restoreDraft() {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY)
+    if (!raw) return
+    const saved = JSON.parse(raw) as { at?: number, form?: Record<string, string> }
+    if (!saved.at || Date.now() - saved.at > DRAFT_TTL_MS || !saved.form) return dropDraft()
+    // Assign known fields only, so a stale draft from an older shape can't
+    // introduce keys the form doesn't have.
+    for (const field of Object.keys(form) as (keyof typeof form)[]) {
+      if (typeof saved.form[field] === 'string') form[field] = saved.form[field]
+    }
+  } catch {
+    dropDraft()
+  }
+}
+
+onMounted(() => {
+  restoreDraft()
+  watch(form, saveDraft, { deep: true })
+
+  if (route.query[REOPEN_FLAG] !== '1') return
+  open.value = true
+  const { [REOPEN_FLAG]: _flag, ...query } = route.query
+  router.replace({ query })
+})
+
 // The provider already told us a name, and usually an email. Filling blanks
 // only, so it can never overwrite something the reader has typed — and so the
 // shipping name stays theirs to change when it differs from the account.
@@ -89,7 +139,7 @@ watch(() => open.value && verified.value, (ready) => {
 }, { immediate: true })
 
 async function submit() {
-  if (props.items.length === 0 || overCap.value) return
+  if (props.items.length === 0 || overCap.value || !verified.value) return
   loading.value = true
   try {
     const address = {
@@ -121,6 +171,7 @@ async function submit() {
       color: 'primary'
     })
     reset()
+    dropDraft()
     open.value = false
     emit('submitted')
     // The server spent the proof on that request, so re-read it: this modal must
@@ -143,9 +194,7 @@ async function submit() {
   <UModal
     v-model:open="open"
     :title="items.length > 1 ? 'Request these books' : 'Request a free copy'"
-    :description="verified
-      ? `Tell us why you’d like ${summary}. Your message appears on the Give a Book board so a sponsor can cover ${items.length > 1 ? 'the whole order' : 'your copy'}. Your contact and address stay private.`
-      : `Before you ask for ${summary}, show that a public account stands behind the request so sponsors can see who they're giving to.`"
+    :description="`Tell us why you’d like ${summary}. Your public account and your message appear on the Give a Book board so a sponsor can see who they're covering; your contact details and address stay private.`"
     :ui="{ content: 'max-w-xl' }"
   >
     <UButton
@@ -159,13 +208,7 @@ async function submit() {
     />
 
     <template #body>
-      <IdentityChallenge
-        v-if="!verified"
-        :redirect="challengeRedirect"
-      />
-
       <form
-        v-else
         class="space-y-4"
         @submit.prevent="submit"
       >
@@ -178,6 +221,14 @@ async function submit() {
           description="Sponsors pay for the printing out of their own pocket, so we keep free requests small. Please trim your cart, or buy the extra copies."
         />
 
+        <!--
+          The public account comes first, because it is the part that decides
+          whether the request can be posted at all. The rest of the form stays
+          visible below it either way — a reader should be able to see what is
+          being asked before deciding to hand over an account.
+        -->
+        <USeparator label="Your public account" />
+
         <div
           v-if="identity"
           class="flex items-center gap-3 rounded-lg bg-elevated/50 p-3"
@@ -188,14 +239,26 @@ async function submit() {
             size="sm"
           />
           <div class="min-w-0 flex-1">
-            <p class="truncate text-sm font-medium text-highlighted">
-              {{ identity.name }}
+            <p class="flex items-center gap-1.5 text-sm font-medium text-highlighted">
+              <span class="truncate">{{ identity.name }}</span>
+              <UIcon
+                name="i-lucide-badge-check"
+                class="size-4 shrink-0 text-primary"
+              />
             </p>
             <p class="text-xs text-muted">
-              Shown on the board beside your message, so sponsors know who they're giving to.
+              Verified, and shown on the board beside your message so sponsors know who
+              they're giving to.
             </p>
           </div>
         </div>
+
+        <IdentityChallenge
+          v-else
+          :redirect="challengeRedirect"
+        />
+
+        <USeparator label="Why you'd like them" />
 
         <UFormField
           label="Your request"
@@ -309,20 +372,34 @@ async function submit() {
           </UFormField>
         </div>
 
-        <div class="flex justify-end gap-3 pt-2">
+        <div class="flex flex-wrap items-center justify-end gap-3 pt-2">
+          <p
+            v-if="!verified"
+            class="mr-auto text-xs text-dimmed"
+          >
+            Verify your account above to post this request. Anything you've typed is kept
+            while you do.
+          </p>
           <UButton
             label="Cancel"
             color="neutral"
             variant="ghost"
             @click="open = false"
           />
+          <!--
+            Recedes until the account is verified. Nuxt UI's disabled state alone
+            is a slight dimming, which on a solid primary button still reads as
+            "press me" — and a bright button that does nothing is worse than an
+            obviously inactive one.
+          -->
           <UButton
             type="submit"
             label="Submit request"
             icon="i-lucide-send"
-            color="primary"
+            :color="verified ? 'primary' : 'neutral'"
+            :variant="verified ? 'solid' : 'subtle'"
             :loading="loading"
-            :disabled="overCap"
+            :disabled="overCap || !verified"
           />
         </div>
       </form>
