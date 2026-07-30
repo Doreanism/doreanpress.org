@@ -74,6 +74,11 @@ function reset() {
   })
 }
 
+// What we filled in from the verified account, as opposed to what the reader
+// typed. Kept so that switching accounts can update those values while leaving
+// edited ones alone — a shipping name is often not the name on the account.
+const prefilled = reactive({ name: '', email: '' })
+
 // Verifying means leaving the site part-way through the form, so the draft is
 // held across the round trip. sessionStorage rather than localStorage on
 // purpose: a draft holds a home address, and this way it dies with the tab.
@@ -97,7 +102,7 @@ function saveDraft() {
   if (!import.meta.client) return
   if (!hasContent()) return dropDraft()
   try {
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ at: Date.now(), form }))
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ at: Date.now(), form, prefilled }))
   } catch {
     // storage full or blocked; the form still works, the draft just won't survive
   }
@@ -107,12 +112,22 @@ function restoreDraft() {
   try {
     const raw = sessionStorage.getItem(DRAFT_KEY)
     if (!raw) return
-    const saved = JSON.parse(raw) as { at?: number, form?: Record<string, string> }
+    const saved = JSON.parse(raw) as {
+      at?: number
+      form?: Record<string, string>
+      prefilled?: Record<string, string>
+    }
     if (!saved.at || Date.now() - saved.at > DRAFT_TTL_MS || !saved.form) return dropDraft()
     // Assign known fields only, so a stale draft from an older shape can't
     // introduce keys the form doesn't have.
     for (const field of Object.keys(form) as (keyof typeof form)[]) {
       if (typeof saved.form[field] === 'string') form[field] = saved.form[field]
+    }
+    // Restored too, because verifying remounts this component: without it we
+    // could no longer tell a value we prefilled from one the reader typed, and
+    // switching accounts would leave the previous account's name in place.
+    for (const field of Object.keys(prefilled) as (keyof typeof prefilled)[]) {
+      if (typeof saved.prefilled?.[field] === 'string') prefilled[field] = saved.prefilled[field]
     }
   } catch {
     dropDraft()
@@ -121,7 +136,10 @@ function restoreDraft() {
 
 onMounted(() => {
   restoreDraft()
-  watch(form, saveDraft, { deep: true })
+  // `prefilled` is watched too: refilling a field with the value it already held
+  // changes only `prefilled`, and that still has to reach the draft or the next
+  // account switch would think the value was hand-typed.
+  watch([form, prefilled], saveDraft, { deep: true })
 
   if (route.query[REOPEN_FLAG] !== '1') return
   open.value = true
@@ -130,11 +148,8 @@ onMounted(() => {
 })
 
 // The provider already told us a name, and usually an email, so those fields
-// start filled. What we filled is remembered, which is what lets a later account
-// switch update them — while anything the reader has since edited is left alone,
-// because a shipping name is often not the name on the account.
-const prefilled = reactive({ name: '', email: '' })
-
+// start filled — and refill when the account changes, unless the reader has
+// edited them since (see `prefilled`).
 watch([() => open.value, proof], ([isOpen, held]) => {
   if (!isOpen || !held) return
   if (!form.name || form.name === prefilled.name) {
