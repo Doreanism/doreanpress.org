@@ -100,7 +100,7 @@ useSeoMeta({
 
       <template #left>
         <p class="text-sm text-muted">
-          © {{ new Date().getFullYear() }} Dorean Press. Printed on demand, sold at cost.
+          Printed on demand, sold at cost.
         </p>
       </template>
     </UFooter>
