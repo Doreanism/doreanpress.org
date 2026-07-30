@@ -15,6 +15,11 @@ import { findBook, type RequestItem } from '#shared/catalog'
 // Pass `selectable` with a v-model to let a sponsor pick out part of the order:
 // the titles get checkboxes (and a copy count where more than one was asked
 // for), and covers they haven't picked fade back in the fan.
+//
+// The titles are plain text, not links to the catalog. They sit beside those
+// checkboxes, so a link there invites a click that navigates off the board and
+// throws away whatever the sponsor had ticked. This card describes a request; it
+// is not a listing to browse from.
 const props = withDefaults(defineProps<{
   items: RequestItem[]
   selectable?: boolean
@@ -104,12 +109,9 @@ function tilt(index: number) {
       >
     </NuxtLink>
     <div class="min-w-0">
-      <NuxtLink
-        :to="`/catalog/${lines[0].item.slug}`"
-        class="font-display font-semibold text-highlighted hover:text-primary"
-      >
+      <p class="font-display font-semibold text-highlighted">
         {{ lines[0].book.title }}
-      </NuxtLink>
+      </p>
       <p class="text-sm text-muted">
         {{ lines[0].book.author }}
       </p>
@@ -188,12 +190,9 @@ function tilt(index: number) {
           @update:model-value="(v: boolean | 'indeterminate') => toggle(line, v === true)"
         />
         <div class="min-w-0">
-          <NuxtLink
-            :to="`/catalog/${line.item.slug}`"
-            class="font-display font-semibold text-highlighted hover:text-primary"
-          >
+          <span class="font-display font-semibold text-highlighted">
             {{ line.book.title }}
-          </NuxtLink>
+          </span>
           <span class="text-muted"> · {{ line.book.author }}</span>
           <span
             v-if="line.item.quantity > 1"
