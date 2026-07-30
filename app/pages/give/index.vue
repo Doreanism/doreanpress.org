@@ -7,6 +7,7 @@ import {
   sponsorTotalCents,
   type RequestItem
 } from '#shared/catalog'
+import { isSameAccount } from '#shared/identity'
 import type { PublicBookRequest } from '~~/server/utils/requests'
 
 useSeoMeta({
@@ -95,6 +96,43 @@ async function sponsor(id: string) {
   }
 }
 
+// Taking your own posting down is one click when the proof already in hand is
+// the account that made it. The withdraw page stays for everything else: a proof
+// that has lapsed, a different account, or the link in the confirmation email.
+const { identity } = useIdentityProof()
+const removingId = ref<string | null>(null)
+
+function isMine(req: PublicBookRequest) {
+  return Boolean(req.requester) && isSameAccount(identity.value, req.requester)
+}
+
+async function removeMine(req: PublicBookRequest) {
+  removingId.value = req.id
+  try {
+    await $fetch(`/api/requests/${req.id}`, { method: 'DELETE' })
+    await refresh()
+    toast.add({
+      title: 'Off the board',
+      description: 'Your request has been removed. You can ask again any time.',
+      icon: 'i-lucide-check',
+      color: 'primary'
+    })
+  } catch (err) {
+    const failure = err as { statusCode?: number, data?: { statusMessage?: string } }
+    // Only the withdraw page can raise a fresh challenge, so a lapsed proof is
+    // handed over to it rather than dead-ending here.
+    if (failure?.statusCode === 401) return navigateTo(`/give/withdraw?id=${req.id}`)
+    toast.add({
+      title: 'Could not remove it',
+      description: failure?.data?.statusMessage || 'Please try again.',
+      icon: 'i-lucide-triangle-alert',
+      color: 'error'
+    })
+  } finally {
+    removingId.value = null
+  }
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
@@ -177,6 +215,18 @@ function formatDate(iso: string) {
             </template>
           </p>
           <UButton
+            v-if="isMine(req)"
+            label="This is my request — remove it"
+            icon="i-lucide-trash-2"
+            color="neutral"
+            variant="link"
+            size="xs"
+            block
+            :loading="removingId === req.id"
+            @click="removeMine(req)"
+          />
+          <UButton
+            v-else
             :to="`/give/withdraw?id=${req.id}`"
             label="This is my request — remove it"
             icon="i-lucide-trash-2"

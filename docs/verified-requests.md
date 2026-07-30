@@ -6,18 +6,25 @@ account is shown on the *Give a Book* board beside their message.
 ## It's a challenge, not a login
 
 There are no accounts on this site. Completing the round trip to a provider
-leaves a short-lived **proof** in a sealed cookie, scoped to the action it was
-raised for. The handler that action lands in spends it — see `spendProof` in
-`server/utils/identityProof.ts` — so the next thing the reader does needs a fresh
-trip to the provider.
+leaves a short-lived **proof** in a sealed cookie. It lasts twenty minutes and
+covers whatever the reader does in that window — post a request, correct it, take
+it down — and then lapses. `discardProof` in `server/utils/identityProof.ts` ends
+one early, which is what "use a different account" does.
 
 That shape is deliberate:
 
 - Nothing to register, no password, no profile to maintain, nothing to delete.
 - No persistent identity in the header, and no sign-out, because there is no
   session to end.
-- A stolen or stale cookie is worth almost nothing: it authorises one action, as
-  one account, within twenty minutes.
+- A stolen or stale cookie is worth little: it acts as one account, for twenty
+  minutes, and only on that account's own posting.
+
+It used to be spent the instant its first action landed. That read well in the
+abstract and badly in the hand: a reader who posted a request and then wanted it
+back down had to go to the provider and return a second time, so every button
+took two presses to do one thing. A proof asserts that an account is here, and
+the first action does not make that any less true — so it is left alone until it
+lapses.
 
 `nuxt-auth-utils` supplies the OAuth dance and the sealed cookie. Its *account*
 model is not used: nothing is ever stored under `session.user`, so
@@ -57,11 +64,12 @@ than inside it, precisely so it cannot ride along.
 ## Rules this buys
 
 - **A proof is required to post.** `POST /api/requests` rejects a caller without
-  one, then spends it.
+  one. The proof survives the posting, so correcting or withdrawing it needs no
+  second trip to the provider.
 - **One open request per account.** Enforced on `account_key`; a reader whose
   books have been sponsored is free to ask again.
-- **Only the posting account may edit or withdraw.** `PATCH`/`DELETE` compare a
-  fresh proof against the identity stored on the request. Rows posted before the
+- **Only the posting account may edit or withdraw.** `PATCH`/`DELETE` compare the
+  proof in hand against the identity stored on the request. Rows posted before the
   challenge existed have no account to compare, so for those the unguessable id
   in the confirmation email stays the key — no weaker than the day they were
   posted, and it doesn't strand anyone.
@@ -71,7 +79,11 @@ than inside it, precisely so it cannot ride along.
   so before the reader fills in an address.
 
 Note what the withdraw link in the confirmation email now is: an address, not a
-capability. Following it prompts for a fresh challenge.
+capability. Following it asks for a challenge unless one is already in hand.
+
+On the board itself, a reader holding a proof for the account behind a posting
+gets a one-click removal on the card; everyone else follows that link to
+`/give/withdraw`, which can raise the challenge the card cannot.
 
 ## Setting up the providers
 

@@ -6,6 +6,6 @@
 // when there is nothing to discard — the reader's intent ("I am not verified
 // now") is satisfied either way, and a 404 here would only be noise.
 export default defineEventHandler(async (event) => {
-  await spendProof(event)
+  await discardProof(event)
   return { ok: true }
 })

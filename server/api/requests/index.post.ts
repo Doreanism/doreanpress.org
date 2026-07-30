@@ -106,10 +106,9 @@ export default defineEventHandler(async (event) => {
     address
   })
 
-  // The proof did what it was raised for. Spending it here means the next thing
-  // this reader does — withdrawing, or asking again later — needs its own trip
-  // to the provider rather than riding on a cookie left lying around.
-  await spendProof(event)
+  // The proof is left in hand. It is still true that this account is here, and
+  // the reader is very often not finished — correcting the message or taking the
+  // posting down are the next things they do.
 
   // Confirm to the requester, and (optionally) notify the press. The withdraw
   // link tells them where to go; proving the account again is what authorises it.

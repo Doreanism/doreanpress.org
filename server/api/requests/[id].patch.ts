@@ -93,7 +93,5 @@ export default defineEventHandler(async (event) => {
   }
 
   const updated = await updateRequest(id, patch)
-  // The proof was raised to make this edit, and it has. Spend it.
-  await spendProof(event)
   return toPublic(updated!)
 })

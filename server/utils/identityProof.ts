@@ -1,15 +1,21 @@
-// Reading and spending a completed identity challenge.
+// Reading and ending a completed identity challenge.
 //
 // The whole lifecycle is: a reader raises a challenge, the provider hands them
-// back, the proof sits in a sealed cookie only until the action it was raised
-// for lands, and then it is spent. Nothing here logs anybody in — there is no
-// account to be in, and a proof that has been spent is simply gone.
+// back, and the proof sits in a sealed cookie until it lapses, they discard it,
+// or a fresh challenge replaces it. Nothing here logs anybody in — there is no
+// account to be in, and a proof that has ended is simply gone.
 //
-// Spending has to be recorded server-side. Clearing the cookie only asks the
+// Within that window one proof covers everything the reader does: post a
+// request, correct it, take it down. It asserts one thing — this account is
+// here — and the first action does not make that less true. Burning it per
+// action instead put a full round trip to the provider in front of every click,
+// which readers experienced as having to press each button twice.
+//
+// Ending has to be recorded server-side. Clearing the cookie only asks the
 // browser to forget it; the sealed value itself stays cryptographically valid
 // until it expires, so a copy kept anywhere else — a proxy log, a shared
 // machine, a curl session — would otherwise go on working. Recording the id is
-// what makes "spent" true rather than merely polite.
+// what makes "over" true rather than merely polite.
 
 import type { H3Event } from 'h3'
 import type { IdentityProof } from '#shared/identity'
@@ -41,10 +47,10 @@ async function isSpent(id: string): Promise<boolean> {
 /**
  * Mark a proof id as used up, so it is refused from then on.
  *
- * Exported because a proof can end in three ways and all of them are final: it
- * is spent on an action, deliberately abandoned (the reader wants to show a
- * different account), or replaced by a fresh challenge. Burning all three keeps
- * "this proof is over" from depending on the browser having dropped a cookie.
+ * Exported because a proof can be ended two ways short of lapsing, and both are
+ * final: deliberately abandoned (the reader wants to show a different account),
+ * or replaced by a fresh challenge. Burning both keeps "this proof is over" from
+ * depending on the browser having dropped a cookie.
  */
 export async function burnProof(event: H3Event, id: string): Promise<void> {
   await ensureSchema()
@@ -89,14 +95,14 @@ export async function requireProof(event: H3Event, action: string): Promise<Iden
 }
 
 /**
- * Spend the proof: record the id as used, then drop the cookie.
+ * End the proof now: record the id as finished, then drop the cookie.
  *
- * Called the moment the action it was raised for has actually happened, so a
- * proof is never available to a second action. This is what keeps the model a
- * challenge rather than a session — the next thing the reader does needs a fresh
- * round trip to the provider.
+ * For when the reader is deliberately done with an account — "use a different
+ * account" — not after each action they take with it. Actions leave the proof
+ * alone and let it lapse on its own, which is what keeps a second action from
+ * demanding a second trip to the provider.
  */
-export async function spendProof(event: H3Event): Promise<void> {
+export async function discardProof(event: H3Event): Promise<void> {
   const session = await getUserSession(event)
   const id = session.proof?.id
 

@@ -214,15 +214,12 @@ async function submit() {
     dropDraft()
     open.value = false
     emit('submitted')
-    // The server spent the proof on that request, so re-read it: this modal must
-    // ask for a fresh challenge next time rather than appear to still hold one.
-    await refreshProof()
   } catch (err) {
     const failure = err as { statusCode?: number, data?: { statusMessage?: string } }
     const message = failure?.data?.statusMessage || 'Something went wrong. Please try again.'
     toast.add({ title: 'Could not submit', description: message, icon: 'i-lucide-triangle-alert', color: 'error' })
-    // A lapsed or already-spent proof is the one failure the form can't explain
-    // on its own — re-reading it swaps the form back for the challenge.
+    // A lapsed proof is the one failure the form can't explain on its own —
+    // re-reading it swaps the form back for the challenge.
     if (failure?.statusCode === 401) await refreshProof()
   } finally {
     loading.value = false

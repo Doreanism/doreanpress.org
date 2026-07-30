@@ -9,7 +9,7 @@ useSeoMeta({
 
 const route = useRoute()
 const toast = useToast()
-const { identity, verified, refresh: refreshProof } = useIdentityProof()
+const { identity, verified } = useIdentityProof()
 
 const id = computed(() => String(route.query.id || ''))
 const removing = ref(false)
@@ -36,8 +36,6 @@ async function withdraw() {
   removing.value = true
   try {
     await $fetch(`/api/requests/${id.value}`, { method: 'DELETE' })
-    // The server spent the proof on that removal.
-    await refreshProof()
     await navigateTo('/give')
     toast.add({
       title: 'Book request deleted',
