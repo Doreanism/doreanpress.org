@@ -48,9 +48,7 @@ useSeoMeta({
       <UNavigationMenu :items="nav" />
 
       <template #right>
-        <ThemePicker />
-
-        <UColorModeButton />
+        <AppSettings />
 
         <UChip
           :text="count"
