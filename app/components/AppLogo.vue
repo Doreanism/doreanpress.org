@@ -40,9 +40,9 @@ withDefaults(defineProps<{
 
     <span
       v-if="!markOnly"
-      class="font-display text-xl leading-none tracking-tight"
+      class="font-display text-xl leading-none tracking-tight text-highlighted"
     >
-      <span class="font-semibold text-highlighted">Dorean</span><span class="text-muted"> Press</span>
+      Dorean Press
     </span>
   </span>
 </template>
