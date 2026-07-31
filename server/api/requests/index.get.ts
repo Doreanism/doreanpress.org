@@ -1,5 +1,5 @@
-// Public list of open requests — only board-safe fields.
+// Public list of open requests — only board-safe fields, and grouped so one
+// reader's orders to one address arrive as a single entry.
 export default defineEventHandler(async () => {
-  const open = await listOpenRequests()
-  return open.map(toPublic)
+  return groupRequests(await listOpenRequests())
 })

@@ -77,6 +77,73 @@ export function toPublic(r: BookRequest): PublicBookRequest {
   }
 }
 
+/**
+ * The open orders that belong together on the board: one account, one address.
+ *
+ * The board lists requests, but a sponsor is looking at a person — so orders
+ * standing behind the same proved account and going to the same place are drawn
+ * as one entry, under one badge, rather than as cards that merely happen to sit
+ * near each other.
+ *
+ * Grouping is decided here and never in the browser, because the address is half
+ * the key and the address is private. What crosses the boundary is a group id
+ * borrowed from one of the orders: opaque, and derived from nothing that a
+ * guessed address could confirm.
+ */
+export interface PublicRequestGroup {
+  /** Stable key for the group — the id of the order that opened it. */
+  id: string
+  /** The account behind every order in the group. Null on unverified rows. */
+  requester: RequesterIdentity | null
+  /** In the order the board was given them, so newest first. Never empty. */
+  orders: PublicBookRequest[]
+}
+
+const normalize = (v?: string) => (v ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+
+/**
+ * Where the parcel would actually go, as one comparable string.
+ *
+ * The recipient name counts: a reader shipping to their own flat and to a
+ * friend's is asking for two destinations, not one. Case and stray spacing are
+ * levelled out — and postcodes stripped of spacing and dashes — so `SW1A 1AA`
+ * and `sw1a1aa` are one place, which is what retyping an address produces.
+ */
+function destinationKey(r: BookRequest): string {
+  const a = r.address
+  return [
+    normalize(r.name),
+    normalize(a.line1),
+    normalize(a.line2),
+    normalize(a.city),
+    normalize(a.state),
+    normalize(a.postalCode).replace(/[\s-]/g, ''),
+    normalize(a.country)
+  ].join('|')
+}
+
+export function groupRequests(requests: BookRequest[]): PublicRequestGroup[] {
+  const groups: PublicRequestGroup[] = []
+  const byKey = new Map<string, PublicRequestGroup>()
+
+  for (const r of requests) {
+    // An unverified row has no account to group on, and treating two of them
+    // that share an address as one person is a claim we are not entitled to
+    // make. Each stands alone.
+    const key = r.requester ? `${accountKey(r.requester)}@${destinationKey(r)}` : null
+    const existing = key ? byKey.get(key) : undefined
+    if (existing) {
+      existing.orders.push(toPublic(r))
+      continue
+    }
+    const group: PublicRequestGroup = { id: r.id, requester: r.requester, orders: [toPublic(r)] }
+    if (key) byKey.set(key, group)
+    groups.push(group)
+  }
+
+  return groups
+}
+
 export interface CreateRequestInput {
   items: RequestItem[]
   message: string
