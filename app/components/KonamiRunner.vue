@@ -2,11 +2,8 @@
 // Easter egg: enter the Konami code and a little guy sprints across the
 // screen tossing books over his shoulder. Purely decorative.
 //
-// He runs three lengths in a Z: left→right across the top, pivots and heads
-// right→left across the middle, pivots again and exits off the bottom right.
-const LEG_MS = 2400 // one length of the screen
-const TURN_MS = 420 // the pivot at each end
-const RUN_MS = LEG_MS * 3 + TURN_MS * 2
+// One straight length: on from the left, across the middle, off the right.
+const RUN_MS = 2400
 
 interface Book {
   id: number
@@ -27,11 +24,12 @@ function launch() {
 
   // A blizzard of books, each flung in its own random direction, spread across
   // the whole run so he sheds them the entire way.
-  books.value = Array.from({ length: 100 }, (_, i) => ({
+  const COUNT = 34
+  books.value = Array.from({ length: COUNT }, (_, i) => ({
     id: bookId++,
-    delay: 200 + i * ((RUN_MS - 600) / 100),
+    delay: 200 + i * ((RUN_MS - 600) / COUNT),
     tx: `${(Math.random() - 0.5) * 120}vw`, // -60vw … +60vw
-    ty: `${15 - Math.random() * 55}vh`, // +15vh … -40vh, so they scatter from any lane
+    ty: `${15 - Math.random() * 55}vh`, // +15vh … -40vh, so they scatter up and out
     rot: `${(Math.random() - 0.5) * 1800}deg` // spin either way, up to ~2.5 turns
   }))
   active.value = true
@@ -58,11 +56,7 @@ onUnmounted(() => {
       aria-hidden="true"
     >
       <div class="konami-runner">
-        <!-- Facing flips at each pivot; the squash mid-turn reads as him
-             planting a foot and spinning round. -->
-        <div class="konami-facing">
-          <span class="konami-guy">🏃</span>
-        </div>
+        <span class="konami-guy">🏃</span>
 
         <span
           v-for="b in books"
@@ -89,8 +83,8 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-/* The whole group runs the Z; books are children so they launch from wherever
-   he happens to be. */
+/* The whole group runs the length; books are children so they launch from
+   wherever he happens to be. */
 .konami-runner {
   position: absolute;
   top: 0;
@@ -99,43 +93,17 @@ onUnmounted(() => {
   height: 6rem;
   font-size: 6rem;
   line-height: 1;
-  animation: konami-run 8.04s forwards;
+  animation: konami-run 2.4s linear forwards;
 }
 
-/* Percentages below are the leg/turn boundaries: 2.4s legs either side of
-   0.42s pivots, over 8.04s total. */
 @keyframes konami-run {
-  /* top lane, left → right */
-  0% { transform: translate(-18vw, 6vh); animation-timing-function: linear; }
-  29.85% { transform: translate(96vw, 6vh); animation-timing-function: ease-in-out; }
-  /* pivot down to the middle lane */
-  35.07% { transform: translate(96vw, 44vh); animation-timing-function: linear; }
-  /* middle lane, right → left */
-  64.93% { transform: translate(0vw, 44vh); animation-timing-function: ease-in-out; }
-  /* pivot down to the bottom lane */
-  70.15% { transform: translate(0vw, 76vh); animation-timing-function: linear; }
-  /* bottom lane, left → right, off the edge */
-  100% { transform: translate(120vw, 76vh); }
+  /* middle lane, on from the left and straight off the right */
+  0% { transform: translate(-18vw, 44vh); }
+  100% { transform: translate(120vw, 44vh); }
 }
 
-/* Compounds with the emoji's own flip below, so he always faces the way he's
-   travelling; pinching to nothing mid-pivot reads as the turn. */
-.konami-facing {
-  width: 100%;
-  height: 100%;
-  animation: konami-face 8.04s forwards;
-}
-
-@keyframes konami-face {
-  0%, 29.85% { transform: scaleX(1); }
-  32.46% { transform: scaleX(0.12); }
-  35.07%, 64.93% { transform: scaleX(-1); }
-  67.54% { transform: scaleX(0.12); }
-  70.15%, 100% { transform: scaleX(1); }
-}
-
-/* The emoji is drawn facing left, so flip it once here; the animation above
-   does the rest. Bobs on `translate` so it doesn't fight that flip. */
+/* The emoji is drawn facing left, so flip it to face the way he's travelling.
+   Bobs on `translate` so it doesn't fight that flip. */
 .konami-guy {
   display: inline-block;
   transform: scaleX(-1);
@@ -167,8 +135,7 @@ onUnmounted(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .konami-runner,
-  .konami-facing { animation-duration: 14s; }
+  .konami-runner { animation-duration: 4.5s; }
   .konami-guy { animation: none; }
   .konami-book { animation-duration: 2s; }
 }
