@@ -2,13 +2,15 @@
  * The identity proof currently held, if any.
  *
  * Read this rather than `useUserSession().loggedIn` — nothing is stored under
- * `user`, so that flag is always false by design. A proof exists only between
- * completing a challenge and finishing the action it was raised for; the server
- * spends it as soon as that action lands, which is why `refresh()` matters after
- * anything that consumes one.
+ * `user`, so that flag is always false by design. A proof lasts the twenty
+ * minutes of its cookie and covers everything the reader does in that window;
+ * actions leave it alone. `refresh()` matters after anything that ends one —
+ * discarding it to show a different account, or a lapse a request surfaced as a
+ * 401.
  *
- * There is no sign-out counterpart on purpose. A proof is not a login, so the
- * only way to be rid of one is to use it or let it lapse.
+ * There is no sign-out counterpart on purpose. A proof is not a login: there is
+ * no account to be in, and discarding one is choosing a different account rather
+ * than leaving.
  */
 export function useIdentityProof() {
   const { session, fetch: refresh } = useUserSession()
