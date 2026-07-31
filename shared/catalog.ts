@@ -207,16 +207,6 @@ export function itemsCopies(items: RequestItem[]): number {
 }
 
 /**
- * Most copies one free request may ask for, counting every title together.
- *
- * A request is a gift from a stranger who pays for the printing, so the obvious
- * way to abuse the board is to ask for a stack and resell them. A small cap
- * makes that not worth anyone's trouble while leaving room for someone who
- * genuinely wants a couple of copies to pass on. Paid orders are unaffected.
- */
-export const MAX_REQUEST_COPIES = 5
-
-/**
  * Narrow a chosen selection down to what a request actually still holds: only
  * requested slugs, never more copies than remain, no duplicate lines. Untrusted
  * input (a sponsor's POST, a webhook replayed after someone else gave) passes

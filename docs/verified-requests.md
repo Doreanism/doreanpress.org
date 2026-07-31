@@ -73,10 +73,10 @@ than inside it, precisely so it cannot ride along.
   challenge existed have no account to compare, so for those the unguessable id
   in the confirmation email stays the key — no weaker than the day they were
   posted, and it doesn't strand anyone.
-- **At most `MAX_REQUEST_COPIES` copies per request**, counting every title
-  together. Reselling donated books is the obvious abuse left once a request has
-  a name on it. Rejected rather than quietly trimmed, and the request modal says
-  so before the reader fills in an address.
+- **No cap on how many copies a request asks for.** A sponsor chooses what they
+  cover and can fund part of an order, so a large request takes nothing from
+  anyone who did not decide to give it. One open request per account is the
+  limit that remains.
 
 Note what the withdraw link in the confirmation email now is: an address, not a
 capability. Following it asks for a challenge unless one is already in hand.

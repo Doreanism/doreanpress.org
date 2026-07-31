@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { findBook, itemsCopies, MAX_REQUEST_COPIES, summarizeTitles, type RequestItem } from '#shared/catalog'
+import { findBook, summarizeTitles, type RequestItem } from '#shared/catalog'
 import { providerLabel } from '#shared/identity'
 
 // The whole set of items is posted as ONE request — an order a sponsor funds in
@@ -42,11 +42,6 @@ const titles = computed(() =>
   props.items
     .map(item => findBook(item.slug)?.title)
     .filter((t): t is string => Boolean(t)))
-
-// The server rejects an oversized request outright, so say so before the reader
-// fills in an address for nothing.
-const copies = computed(() => itemsCopies(props.items))
-const overCap = computed(() => copies.value > MAX_REQUEST_COPIES)
 
 const summary = computed(() => {
   if (titles.value.length === 0) return ''
@@ -179,7 +174,7 @@ async function useDifferentAccount() {
 }
 
 async function submit() {
-  if (props.items.length === 0 || overCap.value || !verified.value) return
+  if (props.items.length === 0 || !verified.value) return
   loading.value = true
   try {
     const address = {
@@ -249,15 +244,6 @@ async function submit() {
         class="space-y-4"
         @submit.prevent="submit"
       >
-        <UAlert
-          v-if="overCap"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-triangle-alert"
-          :title="`That's ${copies} copies — a free request can be for up to ${MAX_REQUEST_COPIES}`"
-          description="Sponsors pay for the printing out of their own pocket, so we keep free requests small. Please trim your cart, or buy the extra copies."
-        />
-
         <!--
           The public account comes first, because it is the part that decides
           whether the request can be posted at all. The rest of the form stays
@@ -448,7 +434,7 @@ async function submit() {
             :color="verified ? 'primary' : 'neutral'"
             :variant="verified ? 'solid' : 'subtle'"
             :loading="loading"
-            :disabled="overCap || !verified"
+            :disabled="!verified"
           />
         </div>
       </form>

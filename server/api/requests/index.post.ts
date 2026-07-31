@@ -1,4 +1,4 @@
-import { findBook, itemsCopies, itemTitles, MAX_REQUEST_COPIES, type RequestItem } from '#shared/catalog'
+import { findBook, itemTitles, type RequestItem } from '#shared/catalog'
 import { accountKey } from '#shared/identity'
 
 interface Body {
@@ -53,15 +53,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Your request has no books in it.' })
   }
 
-  // Rejected rather than quietly trimmed: someone who asked for eight copies
-  // should be told, not handed five and left to wonder.
-  const copies = itemsCopies(items)
-  if (copies > MAX_REQUEST_COPIES) {
-    throw createError({
-      statusCode: 422,
-      statusMessage: `A free request can be for up to ${MAX_REQUEST_COPIES} copies in total, and this one asks for ${copies}. Please remove a few from your cart and try again.`
-    })
-  }
+  // How many copies a request asks for is left to the reader: a sponsor decides
+  // what they are willing to cover, and can fund part of an order, so a large
+  // request costs nobody anything they did not choose to give.
 
   const message = str(body?.message, 1000)
   const name = str(body?.name, 120)

@@ -6,7 +6,6 @@ import {
   itemsSubtotalCents,
   itemTitles,
   limitItems,
-  MAX_REQUEST_COPIES,
   SPONSOR_SHIPPING_CENTS,
   sponsorTotalCents,
   subtractItems,
@@ -133,12 +132,5 @@ describe('summarizeTitles', () => {
     expect(summarizeTitles(['A'])).toBe('A')
     expect(summarizeTitles(['A', 'B'])).toBe('A and B')
     expect(summarizeTitles(['A', 'B', 'C'])).toBe('A, B, and C')
-  })
-})
-
-describe('MAX_REQUEST_COPIES', () => {
-  it('leaves room for a couple of copies without being a wholesale channel', () => {
-    expect(MAX_REQUEST_COPIES).toBeGreaterThan(1)
-    expect(MAX_REQUEST_COPIES).toBeLessThan(20)
   })
 })
