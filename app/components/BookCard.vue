@@ -29,14 +29,6 @@ function addToCart(book: Book) {
         class="aspect-[2/3] w-full object-cover transition duration-300 group-hover:scale-[1.03]"
         loading="lazy"
       >
-      <UBadge
-        v-if="book.freePdfUrl"
-        label="Free PDF"
-        color="primary"
-        variant="solid"
-        size="sm"
-        class="absolute left-3 top-3"
-      />
     </NuxtLink>
 
     <div class="flex flex-1 flex-col gap-3 p-4">
