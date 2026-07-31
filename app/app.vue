@@ -42,12 +42,7 @@ useSeoMeta({
 
     <UHeader>
       <template #left>
-        <NuxtLink
-          to="/"
-          aria-label="Dorean Press home"
-        >
-          <AppLogo size="size-8" />
-        </NuxtLink>
+        <AppLogo size="size-8" />
       </template>
 
       <UNavigationMenu :items="nav" />
