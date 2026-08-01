@@ -25,15 +25,9 @@ export default defineEventHandler(async (event) => {
   // look at, and what makes the limit below mean anything.
   const proof = await requireProof(event, 'asking for a book')
 
-  // One open request per account. Without this the challenge would only slow a
-  // scammer down once; with it, every extra posting costs another real account.
-  const waiting = await findOpenRequestByAccount(accountKey(proof.identity))
-  if (waiting) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'You already have a request on the Give a Book board. Please wait for it to be sponsored, or remove it before posting another.'
-    })
-  }
+  // What this account already has waiting. The limit is one open *destination*,
+  // not one posting — see below, once the address has been read.
+  const waiting = await listOpenRequestsByAccount(accountKey(proof.identity))
 
   const body = await readBody<Body>(event)
 
@@ -88,17 +82,46 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const record = await createRequest({
-    items,
-    message,
-    // Snapshotted, not looked up later: the board should show the account as it
-    // was when the reader stood behind the request, even if they rename it.
-    requester: proof.identity,
-    name,
-    email,
-    phone,
-    address
-  })
+  // One open order per doorstep, rather than one open request per account.
+  //
+  // A reader already on the board who asks for another book is not papering
+  // anything — they remembered a title — and they are still one person waiting
+  // for one parcel. So the books go into the order that is already there: one
+  // card, one list, one sponsor button, no second posting to stack beneath the
+  // first. A different address is the shape the challenge exists to make
+  // expensive, so that is where this bites instead.
+  const destination = destinationKey({ name, address })
+  const already = waiting.find(r => destinationKey(r) === destination)
+
+  if (waiting.length > 0 && !already) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'You already have an order waiting on the Give a Book board, going to a different address. Anything you ask for at that same address is added to it — to ship somewhere else, remove that request first.'
+    })
+  }
+
+  const record = already
+    ? await updateRequest(already.id, foldOrders(already, { items, message }))
+    : await createRequest({
+        items,
+        message,
+        // Snapshotted, not looked up later: the board should show the account as
+        // it was when the reader stood behind the request, even if they rename it.
+        requester: proof.identity,
+        name,
+        email,
+        phone,
+        address
+      })
+
+  // Only reachable if the order was sponsored or withdrawn between reading it
+  // above and writing to it. Nothing is lost — asking again posts it afresh.
+  if (!record) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'That request just left the board. Please send yours again.'
+    })
+  }
 
   // The proof is left in hand. It is still true that this account is here, and
   // the reader is very often not finished — correcting the message or taking the
@@ -111,7 +134,9 @@ export default defineEventHandler(async (event) => {
   const configured = useRuntimeConfig(event).public.siteUrl.replace(/\/$/, '')
   const origin = getRequestURL(event).origin || configured
   const withdrawUrl = `${origin}/give/withdraw?id=${record.id}`
-  const titles = itemTitles(items)
+  // The whole order, not just what this form added: a reader who came back for
+  // one more book should be told what is now waiting for them, in one list.
+  const titles = itemTitles(record.items)
   await sendEmail(requestConfirmationEmail({ to: email, name, titles, withdrawUrl }))
   const press = pressEmailAddress()
   if (press) {

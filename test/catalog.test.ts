@@ -6,6 +6,7 @@ import {
   itemsSubtotalCents,
   itemTitles,
   limitItems,
+  mergeItems,
   SPONSOR_SHIPPING_CENTS,
   sponsorTotalCents,
   subtractItems,
@@ -83,6 +84,23 @@ describe('limitItems', () => {
 
   it('treats an empty selection as nothing chosen', () => {
     expect(limitItems(available, [])).toEqual([])
+  })
+})
+
+describe('mergeItems', () => {
+  it('adds up the copies of a title asked for in two orders', () => {
+    expect(mergeItems([[{ slug: A, quantity: 1 }], [{ slug: A, quantity: 2 }, { slug: B, quantity: 1 }]]))
+      .toEqual([{ slug: A, quantity: 3 }, { slug: B, quantity: 1 }])
+  })
+
+  it('leaves the orders it was given alone', () => {
+    const first = [{ slug: A, quantity: 1 }]
+    mergeItems([first, [{ slug: A, quantity: 5 }]])
+    expect(first).toEqual([{ slug: A, quantity: 1 }])
+  })
+
+  it('is empty for no orders', () => {
+    expect(mergeItems([])).toEqual([])
   })
 })
 

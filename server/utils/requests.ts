@@ -8,7 +8,7 @@
 //
 // Persistence: Netlify DB (Neon Postgres) — see `server/utils/db.ts`.
 
-import { subtractItems, type RequestItem } from '#shared/catalog'
+import { mergeItems, subtractItems, type RequestItem } from '#shared/catalog'
 import { accountKey, type RequesterIdentity } from '#shared/identity'
 
 export type RequestStatus = 'open' | 'fulfilled'
@@ -77,39 +77,27 @@ export function toPublic(r: BookRequest): PublicBookRequest {
   }
 }
 
-/**
- * The open orders that belong together on the board: one account, one address.
- *
- * The board lists requests, but a sponsor is looking at a person — so orders
- * standing behind the same proved account and going to the same place are drawn
- * as one entry, under one badge, rather than as cards that merely happen to sit
- * near each other.
- *
- * Grouping is decided here and never in the browser, because the address is half
- * the key and the address is private. What crosses the boundary is a group id
- * borrowed from one of the orders: opaque, and derived from nothing that a
- * guessed address could confirm.
- */
-export interface PublicRequestGroup {
-  /** Stable key for the group — the id of the order that opened it. */
-  id: string
-  /** The account behind every order in the group. Null on unverified rows. */
-  requester: RequesterIdentity | null
-  /** In the order the board was given them, so newest first. Never empty. */
-  orders: PublicBookRequest[]
-}
+/** Case, punctuation and stray spacing carry no meaning in an address here. */
+const normalize = (v?: string) =>
+  (v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
-const normalize = (v?: string) => (v ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+/** As above, but with the gaps closed too — for a postcode, spacing is styling. */
+const squash = (v?: string) => normalize(v).replace(/ /g, '')
 
 /**
  * Where the parcel would actually go, as one comparable string.
  *
+ * Used both to group the board and to decide whether a second request from an
+ * account is another go at the same doorstep, so it has to survive a reader
+ * retyping their own address: `SW1A 1AA` and `sw1a1aa`, `Apt. 4` and `Apt 4`,
+ * are each one place. What it will not do is guess — `12 Bell St` and
+ * `12 Bell Street` stay two destinations, which fails toward asking rather than
+ * toward posting somebody's books to the wrong house.
+ *
  * The recipient name counts: a reader shipping to their own flat and to a
- * friend's is asking for two destinations, not one. Case and stray spacing are
- * levelled out — and postcodes stripped of spacing and dashes — so `SW1A 1AA`
- * and `sw1a1aa` are one place, which is what retyping an address produces.
+ * friend's is asking for two destinations, not one.
  */
-function destinationKey(r: BookRequest): string {
+export function destinationKey(r: Pick<BookRequest, 'name' | 'address'>): string {
   const a = r.address
   return [
     normalize(r.name),
@@ -117,31 +105,44 @@ function destinationKey(r: BookRequest): string {
     normalize(a.line2),
     normalize(a.city),
     normalize(a.state),
-    normalize(a.postalCode).replace(/[\s-]/g, ''),
-    normalize(a.country)
+    squash(a.postalCode),
+    squash(a.country)
   ].join('|')
 }
 
-export function groupRequests(requests: BookRequest[]): PublicRequestGroup[] {
-  const groups: PublicRequestGroup[] = []
-  const byKey = new Map<string, PublicRequestGroup>()
+/** Where an account's open order lives: one order per doorstep. */
+export function orderKey(r: BookRequest): string | null {
+  return r.requester ? `${accountKey(r.requester)}@${destinationKey(r)}` : null
+}
 
-  for (const r of requests) {
-    // An unverified row has no account to group on, and treating two of them
-    // that share an address as one person is a claim we are not entitled to
-    // make. Each stands alone.
-    const key = r.requester ? `${accountKey(r.requester)}@${destinationKey(r)}` : null
-    const existing = key ? byKey.get(key) : undefined
-    if (existing) {
-      existing.orders.push(toPublic(r))
-      continue
-    }
-    const group: PublicRequestGroup = { id: r.id, requester: r.requester, orders: [toPublic(r)] }
-    if (key) byKey.set(key, group)
-    groups.push(group)
+/** As much of a message as one card should ever have to carry. */
+const MAX_MESSAGE = 2000
+
+/**
+ * The one order a reader ends up with when they ask again for the same doorstep.
+ *
+ * Not a second posting beside the first: the same order, grown. The copies add
+ * up per title, and the new words are kept under the old ones — a reader who
+ * comes back to add a book usually says why, and dropping either half would
+ * either lose their reason or lose their update. Oldest paragraphs fall off the
+ * front once it runs long, so a reader who returns ten times cannot turn one
+ * card into a wall of text.
+ */
+export function foldOrders(
+  existing: Pick<BookRequest, 'items' | 'message'>,
+  incoming: Pick<BookRequest, 'items' | 'message'>
+): Pick<BookRequest, 'items' | 'message'> {
+  const said = existing.message.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
+  const adding = incoming.message.trim()
+  // Somebody re-submitting the same form should not have their words doubled.
+  if (adding && !said.includes(adding)) said.push(adding)
+
+  while (said.length > 1 && said.join('\n\n').length > MAX_MESSAGE) said.shift()
+
+  return {
+    items: mergeItems([existing.items, incoming.items]),
+    message: said.join('\n\n').slice(0, MAX_MESSAGE)
   }
-
-  return groups
 }
 
 export interface CreateRequestInput {
@@ -215,6 +216,35 @@ function ensureSchema() {
         CREATE INDEX IF NOT EXISTS book_requests_account_open_idx
           ON book_requests (account_key, status)
       `
+
+      // One open order per doorstep, applied to what is already there. Under the
+      // old rule a reader's second request became a second row, and the board
+      // drew them as two cards for one person waiting on one parcel. Those rows
+      // are folded into the earliest of them — the id a confirmation email and
+      // any in-flight checkout already point at — rather than left for the board
+      // to paper over.
+      const open = await sql`
+        SELECT * FROM book_requests
+         WHERE status = 'open' AND account_key IS NOT NULL
+         ORDER BY created_at ASC
+      `
+      const byDoorstep = new Map<string, BookRequest[]>()
+      for (const row of open) {
+        const request = fromRow(row)
+        const key = orderKey(request)
+        if (!key) continue
+        byDoorstep.set(key, [...(byDoorstep.get(key) ?? []), request])
+      }
+      for (const [first, ...rest] of byDoorstep.values()) {
+        if (!first || rest.length === 0) continue
+        const folded = rest.reduce<Pick<BookRequest, 'items' | 'message'>>(foldOrders, first)
+        await sql`
+          UPDATE book_requests
+             SET items = ${JSON.stringify(folded.items)}::jsonb, message = ${folded.message}
+           WHERE id = ${first.id}
+        `
+        for (const spent of rest) await sql`DELETE FROM book_requests WHERE id = ${spent.id}`
+      }
     })()
   }
   return schema
@@ -303,22 +333,24 @@ export async function listOpenRequests(): Promise<BookRequest[]> {
 }
 
 /**
- * The request this account already has waiting on the board, if any.
+ * Everything this account already has waiting on the board.
  *
- * One open request per account is the main thing the challenge buys us: a scammer
- * can no longer paper the board with postings, because each one costs them a
- * fresh social account. It is per *open* request, so a reader whose books have
- * been sponsored is free to ask again.
+ * One open *destination* per account is what the challenge buys us: a scammer
+ * can no longer paper the board with postings, because every extra doorstep
+ * costs them a fresh social account. Asking again for the same doorstep is not
+ * papering anything — it is one reader adding a book they forgot — so that ask
+ * joins the order already there (`foldOrders`) instead of becoming a row of its
+ * own. The caller compares destinations; this only fetches. Open orders only, so
+ * a reader whose books have been sponsored starts again with a clean slate.
  */
-export async function findOpenRequestByAccount(key: string): Promise<BookRequest | null> {
+export async function listOpenRequestsByAccount(key: string): Promise<BookRequest[]> {
   await ensureSchema()
   const rows = await db()`
     SELECT * FROM book_requests
      WHERE account_key = ${key} AND status = 'open'
      ORDER BY created_at ASC
-     LIMIT 1
   `
-  return rows[0] ? fromRow(rows[0]) : null
+  return rows.map(fromRow)
 }
 
 export async function findRequestByLuluJobId(jobId: string | number): Promise<BookRequest | null> {

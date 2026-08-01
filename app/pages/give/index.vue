@@ -8,7 +8,7 @@ import {
   type RequestItem
 } from '#shared/catalog'
 import { isSameAccount } from '#shared/identity'
-import type { PublicBookRequest, PublicRequestGroup } from '~~/server/utils/requests'
+import type { PublicBookRequest } from '~~/server/utils/requests'
 
 useSeoMeta({
   title: 'Give a Book',
@@ -19,10 +19,10 @@ const route = useRoute()
 const toast = useToast()
 const sponsoringId = ref<string | null>(null)
 
-// One entry per reader-and-address, not per row: the server groups the open
-// orders, because half that key is the shipping address and the address never
-// leaves it. Each order inside a group is still sponsored on its own.
-const { data: groups, refresh } = await useFetch<PublicRequestGroup[]>('/api/requests', {
+// One card per order, and a reader has one open order per address: asking again
+// for the same doorstep adds the books to what is already here rather than
+// posting a second time. So a card is everything one reader is waiting for.
+const { data: requests, refresh } = await useFetch<PublicBookRequest[]>('/api/requests', {
   default: () => []
 })
 
@@ -50,16 +50,14 @@ function isSponsorable(items: RequestItem[]) {
   return linesFor(items).length > 0
 }
 
-// A sponsor can cover a whole order or pick out part of it, so every order
+// A sponsor can cover a whole order or pick out part of it, so every card
 // carries its own selection — seeded with everything the reader asked for, since
 // giving the lot is the common case.
 const picks = reactive<Record<string, RequestItem[]>>({})
 
-watch(groups, (list) => {
-  for (const group of list ?? []) {
-    for (const req of group.orders) {
-      if (!picks[req.id]) picks[req.id] = linesFor(req.items).map(l => ({ ...l.item }))
-    }
+watch(requests, (list) => {
+  for (const req of list ?? []) {
+    if (!picks[req.id]) picks[req.id] = linesFor(req.items).map(l => ({ ...l.item }))
   }
 }, { immediate: true })
 
@@ -152,7 +150,7 @@ function formatDate(iso: string) {
     />
 
     <div
-      v-if="!groups || groups.length === 0"
+      v-if="!requests || requests.length === 0"
       class="mt-12 flex flex-col items-center gap-4 text-center"
     >
       <UIcon
@@ -173,90 +171,74 @@ function formatDate(iso: string) {
       class="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3"
     >
       <div
-        v-for="group in groups"
-        :key="group.id"
+        v-for="req in requests"
+        :key="req.id"
         class="flex flex-col gap-4 rounded-lg ring ring-default bg-default p-5"
       >
-        <!-- The account leads the card: one badge stands behind every order under it. -->
-        <div class="flex flex-col gap-2">
-          <RequesterBadge :requester="group.requester" />
-          <p
-            v-if="group.orders.length > 1"
-            class="text-xs text-dimmed"
-          >
-            {{ group.orders.length }} open orders from this reader, going to the same address. Sponsor any one of
-            them — they are funded, printed and shipped separately.
+        <!-- The account leads the card: it is who the sponsor is giving to. -->
+        <RequesterBadge :requester="req.requester" />
+
+        <div class="flex flex-col gap-3">
+          <RequestBooks
+            :items="req.items"
+            :model-value="selection(req)"
+            selectable
+            @update:model-value="(v: RequestItem[]) => picks[req.id] = v"
+          />
+
+          <p class="text-xs text-dimmed">
+            Requested {{ formatDate(req.createdAt) }}
+            <span v-if="req.items.length > 1">
+              · {{ req.items.length }} titles, {{ itemsCopies(req.items) }} copies
+            </span>
           </p>
         </div>
 
-        <div
-          v-for="(req, i) in group.orders"
-          :key="req.id"
-          class="flex flex-col gap-4"
-          :class="i > 0 ? 'border-t border-default pt-4' : ''"
-        >
-          <div class="flex flex-col gap-3">
-            <RequestBooks
-              :items="req.items"
-              :model-value="selection(req)"
-              selectable
-              @update:model-value="(v: RequestItem[]) => picks[req.id] = v"
-            />
+        <RequestMessage :message="req.message" />
 
-            <p class="text-xs text-dimmed">
-              Requested {{ formatDate(req.createdAt) }}
-              <span v-if="req.items.length > 1">
-                · {{ req.items.length }} titles, {{ itemsCopies(req.items) }} copies
-              </span>
-            </p>
-          </div>
-
-          <RequestMessage :message="req.message" />
-
-          <div class="flex flex-col gap-2">
-            <UButton
-              :label="sponsorLabel(req)"
-              icon="i-lucide-gift"
-              color="primary"
-              block
-              :loading="sponsoringId === req.id"
-              :disabled="!isSponsorable(req.items) || selection(req).length === 0"
-              @click="sponsor(req.id)"
-            />
-            <p class="text-center text-xs text-dimmed">
-              <template v-if="selection(req).length === 0">
-                Tick the books you’d like to cover — any you leave stay on the board for someone else.
-              </template>
-              <template v-else-if="coversWholeRequest(req.items, selection(req))">
-                Covers {{ req.items.length > 1 ? 'every book in the order' : 'the book' }} plus shipping, printed and
-                shipped in one parcel.
-              </template>
-              <template v-else>
-                Covers just the books you picked, plus shipping. The rest stays on the board for someone else.
-              </template>
-            </p>
-            <UButton
-              v-if="isMine(req)"
-              :label="group.orders.length > 1 ? 'This is my order — remove it' : 'This is my request — remove it'"
-              icon="i-lucide-trash-2"
-              color="neutral"
-              variant="link"
-              size="xs"
-              block
-              :loading="removingId === req.id"
-              @click="removeMine(req)"
-            />
-            <UButton
-              v-else
-              :to="`/give/withdraw?id=${req.id}`"
-              :label="group.orders.length > 1 ? 'This is my order — remove it' : 'This is my request — remove it'"
-              icon="i-lucide-trash-2"
-              color="neutral"
-              variant="link"
-              size="xs"
-              block
-            />
-          </div>
+        <div class="flex flex-col gap-2">
+          <UButton
+            :label="sponsorLabel(req)"
+            icon="i-lucide-gift"
+            color="primary"
+            block
+            :loading="sponsoringId === req.id"
+            :disabled="!isSponsorable(req.items) || selection(req).length === 0"
+            @click="sponsor(req.id)"
+          />
+          <p class="text-center text-xs text-dimmed">
+            <template v-if="selection(req).length === 0">
+              Tick the books you’d like to cover — any you leave stay on the board for someone else.
+            </template>
+            <template v-else-if="coversWholeRequest(req.items, selection(req))">
+              Covers {{ req.items.length > 1 ? 'every book in the order' : 'the book' }} plus shipping, printed and
+              shipped in one parcel.
+            </template>
+            <template v-else>
+              Covers just the books you picked, plus shipping. The rest stays on the board for someone else.
+            </template>
+          </p>
+          <UButton
+            v-if="isMine(req)"
+            label="This is my request — remove it"
+            icon="i-lucide-trash-2"
+            color="neutral"
+            variant="link"
+            size="xs"
+            block
+            :loading="removingId === req.id"
+            @click="removeMine(req)"
+          />
+          <UButton
+            v-else
+            :to="`/give/withdraw?id=${req.id}`"
+            label="This is my request — remove it"
+            icon="i-lucide-trash-2"
+            color="neutral"
+            variant="link"
+            size="xs"
+            block
+          />
         </div>
       </div>
     </div>

@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { catalog } from '../shared/catalog'
 import type { RequesterIdentity } from '../shared/identity'
-import { groupRequests, type BookRequest } from '../server/utils/requests'
+import { destinationKey, foldOrders, orderKey, type BookRequest } from '../server/utils/requests'
 
-// `groupRequests` is pure — it never reaches the database — so it is exercised
+// These three are pure — they never reach the database — so they are exercised
 // here directly. The rest of `server/utils/requests.ts` is not: those functions
 // all go through `db()`.
+//
+// Together they are the whole of "one open order per doorstep": `destinationKey`
+// and `orderKey` decide whether a reader is asking again for the same parcel,
+// and `foldOrders` is what that second ask does to the order already waiting.
 
 const A = catalog[0]!.slug
+const B = catalog[1]!.slug
 
 function account(subject: string): RequesterIdentity {
-  return { provider: 'mock', subject, name: `Reader ${subject}`, verifiedAt: '2026-01-01T00:00:00.000Z' }
+  return { provider: 'x', subject, name: `Reader ${subject}`, verifiedAt: '2026-01-01T00:00:00.000Z' }
 }
 
 let seq = 0
@@ -32,61 +37,80 @@ function request(over: Partial<BookRequest> = {}): BookRequest {
   }
 }
 
-describe('groupRequests', () => {
-  it('puts one account’s orders to one address in a single group', () => {
-    const groups = groupRequests([request(), request()])
-    expect(groups).toHaveLength(1)
-    expect(groups[0]!.orders).toHaveLength(2)
-    expect(groups[0]!.requester?.subject).toBe('ada')
+describe('destinationKey', () => {
+  it('ignores case, punctuation and doubled spacing', () => {
+    expect(destinationKey(request({ address: { line1: 'Apt. 4, 12 Bell St', city: 'Sunnyvale', postalCode: '94085', country: 'US' } })))
+      .toBe(destinationKey(request({ address: { line1: 'apt 4  12 bell st', city: 'sunnyvale', postalCode: '94085', country: 'us' } })))
   })
 
-  it('keeps the group id and the order of the list it was given', () => {
-    const newest = request()
-    const oldest = request()
-    const groups = groupRequests([newest, oldest])
-    expect(groups[0]!.id).toBe(newest.id)
-    expect(groups[0]!.orders.map(o => o.id)).toEqual([newest.id, oldest.id])
+  it('ignores how a postcode is spaced or hyphenated', () => {
+    const at = (postalCode: string) => destinationKey(request({ address: { line1: '1 A St', city: 'London', postalCode, country: 'GB' } }))
+    expect(at('SW1A 1AA')).toBe(at('sw1a1aa'))
+    expect(at('94085-1234')).toBe(at('940851234'))
   })
 
-  it('splits the same account across two addresses', () => {
-    const away = request({ address: { line1: '3 Other Way', city: 'Oakland', postalCode: '94601', country: 'US' } })
-    expect(groupRequests([request(), away])).toHaveLength(2)
+  it('does not guess that an abbreviation is the same street', () => {
+    const street = (line1: string) => destinationKey(request({ address: { line1, city: 'Sunnyvale', postalCode: '94085', country: 'US' } }))
+    expect(street('12 Bell St')).not.toBe(street('12 Bell Street'))
   })
 
-  it('splits the same account when the parcel is addressed to someone else', () => {
-    expect(groupRequests([request(), request({ name: 'A Friend' })])).toHaveLength(2)
+  it('separates its fields, so text cannot slide from one into the next', () => {
+    const a = destinationKey(request({ address: { line1: '12 Bell', city: 'St Sunnyvale', postalCode: '94085', country: 'US' } }))
+    const b = destinationKey(request({ address: { line1: '12 Bell St', city: 'Sunnyvale', postalCode: '94085', country: 'US' } }))
+    expect(a).not.toBe(b)
   })
 
-  it('never merges two accounts, even at one address', () => {
-    expect(groupRequests([request(), request({ requester: account('grace') })])).toHaveLength(2)
+  it('reads a parcel addressed to someone else as somewhere else', () => {
+    expect(destinationKey(request())).not.toBe(destinationKey(request({ name: 'A Friend' })))
+  })
+})
+
+describe('orderKey', () => {
+  it('is the same for one account asking twice for one doorstep', () => {
+    expect(orderKey(request())).toBe(orderKey(request({ message: 'And one more, please.' })))
   })
 
-  it('never merges unverified rows, because there is no account to merge on', () => {
-    const groups = groupRequests([request({ requester: null }), request({ requester: null })])
-    expect(groups).toHaveLength(2)
-    expect(groups.every(g => g.orders.length === 1)).toBe(true)
+  it('separates two accounts at one address', () => {
+    expect(orderKey(request())).not.toBe(orderKey(request({ requester: account('grace') })))
   })
 
-  it('reads a retyped address as the same address', () => {
-    const retyped = request({
-      name: 'ada  lovelace',
-      address: { line1: '12 BELL  ST', city: 'sunnyvale', state: 'ca', postalCode: '940 85', country: 'US' }
-    })
-    expect(groupRequests([request(), retyped])).toHaveLength(1)
+  it('is null without an account, so unverified rows are never folded together', () => {
+    expect(orderKey(request({ requester: null }))).toBeNull()
+  })
+})
+
+describe('foldOrders', () => {
+  it('adds the new books to the ones already waiting', () => {
+    const folded = foldOrders(
+      { items: [{ slug: A, quantity: 1 }], message: 'First.' },
+      { items: [{ slug: A, quantity: 2 }, { slug: B, quantity: 1 }], message: 'Second.' }
+    )
+    expect(folded.items).toEqual([{ slug: A, quantity: 3 }, { slug: B, quantity: 1 }])
   })
 
-  it('distinguishes addresses that differ only in the second line', () => {
-    const flat = request({ address: { ...request().address, line2: 'Flat 4' } })
-    expect(groupRequests([request(), flat])).toHaveLength(2)
+  it('keeps the new words under the old ones', () => {
+    expect(foldOrders({ items: [], message: 'First.' }, { items: [], message: 'Second.' }).message)
+      .toBe('First.\n\nSecond.')
   })
 
-  it('emits only board-safe fields — no address, name, email or phone', () => {
-    const [group] = groupRequests([request()])
-    expect(Object.keys(group!.orders[0]!).sort())
-      .toEqual(['createdAt', 'id', 'items', 'message', 'requester'])
+  it('does not repeat a message the reader has already said', () => {
+    expect(foldOrders({ items: [], message: 'Same words.' }, { items: [], message: ' Same words. ' }).message)
+      .toBe('Same words.')
   })
 
-  it('is empty for an empty board', () => {
-    expect(groupRequests([])).toEqual([])
+  it('drops the oldest words rather than growing without end', () => {
+    let order = { items: [] as { slug: string, quantity: number }[], message: 'The very first thing I said.' }
+    for (let i = 0; i < 40; i++) {
+      order = foldOrders(order, { items: [], message: `${'a plea of some length '.repeat(5)}#${i}` })
+    }
+    expect(order.message.length).toBeLessThanOrEqual(2000)
+    expect(order.message).not.toContain('The very first thing I said.')
+    expect(order.message).toContain('#39')
+  })
+
+  it('leaves the order it was given alone', () => {
+    const existing = { items: [{ slug: A, quantity: 1 }], message: 'First.' }
+    foldOrders(existing, { items: [{ slug: A, quantity: 4 }], message: 'Second.' })
+    expect(existing).toEqual({ items: [{ slug: A, quantity: 1 }], message: 'First.' })
   })
 })

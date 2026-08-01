@@ -2,6 +2,10 @@
 // A reader's message as it appears on the board, clamped to three lines so one
 // long plea doesn't stretch its card past every other card in the row.
 //
+// Line breaks are kept: a reader who comes back to add a book has their new
+// words held under the old ones in the same message (see `foldOrders`), and run
+// together they would read as one confused sentence.
+//
 // The toggle only appears when there is genuinely more to read, and that has to
 // be measured rather than guessed: whether a message overflows three lines
 // depends on the card width, the font and where the words happen to break, none
@@ -44,7 +48,7 @@ onMounted(() => {
     -->
     <blockquote
       ref="quote"
-      class="border-l-2 border-primary/40 pl-3 text-sm text-toned italic hyphens-auto wrap-anywhere"
+      class="border-l-2 border-primary/40 pl-3 text-sm text-toned italic whitespace-pre-line hyphens-auto wrap-anywhere"
       :class="{ 'line-clamp-3': !expanded }"
     >
       “{{ message }}”

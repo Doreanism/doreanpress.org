@@ -228,6 +228,23 @@ export function limitItems(available: RequestItem[], chosen: RequestItem[]): Req
     .filter((i): i is RequestItem => i !== null)
 }
 
+/**
+ * Several orders' lines as one list, adding up the copies of a repeated title.
+ *
+ * For describing a reader's orders together — the board fans one hand of covers
+ * over everything they are waiting for — never for charging or printing, which
+ * stay per order.
+ */
+export function mergeItems(lists: RequestItem[][]): RequestItem[] {
+  const merged: RequestItem[] = []
+  for (const item of lists.flat()) {
+    const existing = merged.find(i => i.slug === item.slug)
+    if (existing) existing.quantity += item.quantity
+    else merged.push({ ...item })
+  }
+  return merged
+}
+
 /** What is left of a request once some copies have been sponsored. */
 export function subtractItems(items: RequestItem[], funded: RequestItem[]): RequestItem[] {
   const taken = new Map<string, number>()
