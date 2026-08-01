@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { findBook, summarizeTitles, type RequestItem } from '#shared/catalog'
-import { providerLabel } from '#shared/identity'
+import { isControlConfirmed, providerLabel } from '#shared/identity'
 
 // The whole set of items is posted as ONE request — an order a sponsor funds in
 // full — rather than a separate posting per title.
@@ -28,6 +28,9 @@ const router = useRouter()
 // visible underneath, because a reader deciding whether to bother should be able
 // to see everything being asked of them, not just the gate.
 const { proof, identity, verified, refresh: refreshProof } = useIdentityProof()
+
+/** Whether the account in hand was signed into, or merely named and found. */
+const proved = computed(() => isControlConfirmed(identity.value))
 
 // The challenge means leaving the site, so the modal can't survive the round
 // trip on its own. It asks the provider to come back to this page with a marker
@@ -265,16 +268,33 @@ async function submit() {
             <p class="flex items-center gap-1.5 text-sm font-medium text-highlighted">
               <span class="truncate">{{ identity.name }}</span>
               <UIcon
-                name="i-lucide-badge-check"
-                class="size-4 shrink-0 text-primary"
+                :name="proved ? 'i-lucide-badge-check' : 'i-lucide-search-check'"
+                class="size-4 shrink-0"
+                :class="proved ? 'text-primary' : 'text-dimmed'"
               />
               <span class="truncate text-xs font-normal text-dimmed">
                 {{ identity.handle ? `@${identity.handle}` : providerLabel(identity.provider) }}
               </span>
             </p>
-            <p class="text-xs text-muted">
+            <!--
+              The reader is told here what the board will say about them, in the
+              same words, so posting holds no surprise about how their request
+              will read to a sponsor.
+            -->
+            <p
+              v-if="proved"
+              class="text-xs text-muted"
+            >
               Verified, and shown on the board beside your message so sponsors know who
               they're giving to.
+            </p>
+            <p
+              v-else
+              class="text-xs text-muted"
+            >
+              Found, and shown on the board beside your message. Because you didn't sign
+              in, your request will say this account is real but wasn't proved to be
+              yours.
             </p>
           </div>
           <UButton

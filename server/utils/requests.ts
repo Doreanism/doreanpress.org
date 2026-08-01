@@ -250,14 +250,27 @@ function ensureSchema() {
   return schema
 }
 
+/**
+ * The identity on a stored row, or null.
+ *
+ * Rows written before lookups existed carry no `confirmation`, and every one of
+ * them came back from an OAuth challenge — so `control` is the correct reading,
+ * not a hopeful default. New rows always carry the field explicitly. Guarding on
+ * `provider` keeps a stray empty object reading as unverified rather than as a
+ * blank-named account.
+ */
+function requesterFrom(value: unknown): RequesterIdentity | null {
+  const identity = value as RequesterIdentity | null
+  if (!identity?.provider) return null
+  return { ...identity, confirmation: identity.confirmation ?? 'control' }
+}
+
 function fromRow(r: Record<string, unknown>): BookRequest {
   return {
     id: r.id as string,
     items: (r.items as RequestItem[]) ?? [],
     message: r.message as string,
-    // A legacy row has no requester at all; guard on `provider` so a stray
-    // empty object reads as unverified rather than a blank-named account.
-    requester: (r.requester as RequesterIdentity)?.provider ? (r.requester as RequesterIdentity) : null,
+    requester: requesterFrom(r.requester),
     name: r.name as string,
     email: r.email as string,
     phone: r.phone as string,
@@ -351,6 +364,26 @@ export async function listOpenRequestsByAccount(key: string): Promise<BookReques
      ORDER BY created_at ASC
   `
   return rows.map(fromRow)
+}
+
+/**
+ * Every open order already going to one address, whoever posted it.
+ *
+ * The per-account limit assumes an account is expensive to come by, which is
+ * true of one that was signed into and false of one that was merely named — a
+ * handle is free to type, so "post again under a different name" costs nothing.
+ * For those, the doorstep is the only scarce thing left, and this is what lets
+ * the caller hold the line there instead.
+ *
+ * Filtered in memory rather than indexed on a stored key: `destinationKey`
+ * normalises as it goes and has changed shape once already, so a column would
+ * be a cache to keep correct across every future tweak to it. The open board is
+ * small — it is what the *whole* Give a Book page renders — so reading it is
+ * cheap, and this can become a column the day that stops being true.
+ */
+export async function listOpenRequestsAtDestination(destination: string): Promise<BookRequest[]> {
+  const open = await listOpenRequests()
+  return open.filter(r => destinationKey(r) === destination)
 }
 
 export async function findRequestByLuluJobId(jobId: string | number): Promise<BookRequest | null> {

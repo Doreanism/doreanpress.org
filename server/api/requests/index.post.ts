@@ -100,6 +100,25 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // The rule above is worth exactly what the account behind it cost.
+  //
+  // For a signed-in account that is a lot: papering the board means buying more
+  // social accounts. For a named one it is nothing — the next request can claim
+  // any handle at all, and `waiting` comes back empty every time. So for those,
+  // hold the line at the doorstep instead, which is the thing a person asking
+  // for parcels cannot multiply: one open order per address, no matter whose
+  // name is on it. A reader who really does share an address with another
+  // requester can still sign in, which is the honest way through.
+  if (proof.identity.confirmation !== 'control' && !already) {
+    const here = await listOpenRequestsAtDestination(destination)
+    if (here.length > 0) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'There is already an open request going to this address. If it is yours, add books to it instead of posting again — or sign in with a social account to post separately.'
+      })
+    }
+  }
+
   const record = already
     ? await updateRequest(already.id, foldOrders(already, { items, message }))
     : await createRequest({

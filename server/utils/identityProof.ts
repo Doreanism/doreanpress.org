@@ -18,7 +18,7 @@
 // what makes "over" true rather than merely polite.
 
 import type { H3Event } from 'h3'
-import type { IdentityProof } from '#shared/identity'
+import type { IdentityProof, RequesterIdentity } from '#shared/identity'
 
 let schema: Promise<void> | null = null
 function ensureSchema() {
@@ -67,6 +67,40 @@ export async function burnProof(event: H3Event, id: string): Promise<void> {
   // clear of clock skew between instances.
   const cutoff = new Date(Date.now() - proofLifetimeMs(event) * 2).toISOString()
   await sql`DELETE FROM spent_proofs WHERE spent_at < ${cutoff}`
+}
+
+/**
+ * Seal a checked account into the cookie, replacing whatever was there.
+ *
+ * The one place a proof is minted, for either kind of check — the challenge
+ * routes and the lookup endpoint both land here, so there is a single answer to
+ * "where do proofs come from" and a single place the `confirmation` recorded on
+ * one can be trusted to have come from the code that actually did the checking.
+ *
+ * Stored under `proof`, never `user`: this is evidence, not a session.
+ */
+export async function issueProof(
+  event: H3Event,
+  identity: Omit<RequesterIdentity, 'verifiedAt'>,
+  email?: string
+): Promise<void> {
+  // A reader can arrive holding a proof already — they picked the wrong account
+  // and want another. Burn the old one: abandoning a proof should leave it as
+  // dead as spending it, rather than merely out of this browser's reach.
+  const previous = await getUserSession(event)
+  if (previous.proof?.id) await burnProof(event, previous.proof.id)
+
+  // `replaceUserSession`, not `setUserSession`: the latter merges the new value
+  // over the old one, so swapping accounts would inherit whatever the new check
+  // leaves undefined — one account's proof carrying the previous one's email and
+  // avatar. A proof must be exactly one account's.
+  await replaceUserSession(event, {
+    proof: {
+      id: crypto.randomUUID(),
+      identity: { ...identity, verifiedAt: new Date().toISOString() },
+      email: email || undefined
+    }
+  })
 }
 
 /** The proof currently held and still unspent, or null. */

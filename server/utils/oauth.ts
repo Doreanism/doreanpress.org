@@ -10,7 +10,7 @@
 
 import type { H3Event } from 'h3'
 import { withQuery } from 'ufo'
-import type { IdentityProvider, RequesterIdentity } from '#shared/identity'
+import type { ChallengeProvider, IdentityProvider, RequesterIdentity } from '#shared/identity'
 import { CHALLENGE_PROVIDERS } from '#shared/identity'
 
 /**
@@ -43,9 +43,8 @@ export function rememberReturnTo(event: H3Event) {
 }
 
 /**
- * Falls back to a `redirect` still on the query string, which covers the mock
- * route — it completes the challenge and returns within the one request, so the
- * cookie it would set is only a response header and can't be read back here.
+ * Falls back to a `redirect` still on the query string, for a provider that
+ * hands the reader back before the outbound leg's cookie is readable.
  */
 function takeReturnTo(event: H3Event): string {
   const value = getCookie(event, RETURN_COOKIE) || String(getQuery(event).redirect || '')
@@ -56,33 +55,17 @@ function takeReturnTo(event: H3Event): string {
 /**
  * Seal the completed challenge into the cookie and send the reader back.
  *
- * Stored under `proof`, never `user`: this is evidence for the action they were
- * in the middle of, not a session. The handler that action lands in spends it.
+ * `confirmation` is stamped here rather than passed in, and that is the point:
+ * everything reaching this function came back from a provider that signed the
+ * reader in, so control is established by construction and no adapter can
+ * accidentally claim it for something weaker.
  */
 export async function completeChallenge(
   event: H3Event,
-  identity: Omit<RequesterIdentity, 'verifiedAt'>,
+  identity: Omit<RequesterIdentity, 'verifiedAt' | 'confirmation'>,
   email?: string
 ) {
-  // A reader can arrive here already holding a proof — they picked the wrong
-  // account and want another. Burn the old one: abandoning a proof should leave
-  // it as dead as spending it, rather than merely out of this browser's reach.
-  const previous = await getUserSession(event)
-  if (previous.proof?.id) {
-    await burnProof(event, previous.proof.id)
-  }
-
-  // `replaceUserSession`, not `setUserSession`: the latter merges the new value
-  // over the old one, so swapping accounts would inherit whatever the new
-  // provider leaves undefined — an X proof carrying the previous account's email
-  // and avatar. The proof must be exactly one account's.
-  await replaceUserSession(event, {
-    proof: {
-      id: crypto.randomUUID(),
-      identity: { ...identity, verifiedAt: new Date().toISOString() },
-      email: email || undefined
-    }
-  })
+  await issueProof(event, { ...identity, confirmation: 'control' }, email)
   return sendRedirect(event, takeReturnTo(event))
 }
 
@@ -98,11 +81,13 @@ export function challengeFailed(event: H3Event, provider: IdentityProvider, erro
 
 /**
  * Providers that actually have credentials, so the UI never offers a button
- * that dead-ends on a configuration error. In dev the mock provider is always
- * offered as well; its route is compiled out of production builds.
+ * that dead-ends on a configuration error.
+ *
+ * The same list in dev as in production. A deployment with none configured
+ * cannot take requests at all, and says so rather than falling back to
+ * something that would let anyone through.
  */
-export function configuredProviders(event?: H3Event): IdentityProvider[] {
+export function configuredProviders(event?: H3Event): ChallengeProvider[] {
   const oauth = useRuntimeConfig(event).oauth
-  const live = CHALLENGE_PROVIDERS.filter(p => oauth[p]?.clientId && oauth[p]?.clientSecret)
-  return import.meta.dev ? [...live, 'mock' as const] : live
+  return CHALLENGE_PROVIDERS.filter(p => oauth[p]?.clientId && oauth[p]?.clientSecret)
 }

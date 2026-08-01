@@ -21,7 +21,7 @@ Built with **Nuxt 4**, **Nuxt UI**, **Stripe**, and the **Lulu Print API**.
 
 ```bash
 npm install
-cp .env.example .env   # fill in keys; defaults run fully mocked
+cp .env.example .env   # printing and email mock out; requests work with no keys
 npm run dev            # http://localhost:3000
 ```
 
@@ -33,9 +33,19 @@ npm run dev            # http://localhost:3000
 See `.env.example`. With no keys, **Lulu runs in mock mode** (no real print
 orders) and Stripe is disabled. To go live, set the `NUXT_*` variables.
 
+Free-book requests need a public account behind them, by one of two routes, and
+neither has a mock mode. **Naming an account** (GitHub, Bluesky, Mastodon) needs
+no credentials at all — public read-only APIs — so the request flow works out of
+the box. **Signing in** (X, Facebook, LinkedIn) is the stronger check and needs
+real OAuth credentials; X is the cheapest to register. The two are not
+equivalent and the site says which one happened — see
+[docs/verified-requests.md](docs/verified-requests.md).
+
 | Variable | Purpose |
 | --- | --- |
 | `NUXT_PUBLIC_SITE_URL` | Base URL (Stripe success/cancel + OG images) |
+| `NUXT_SESSION_PASSWORD` | Seals the identity-proof cookie (32+ chars) |
+| `NUXT_OAUTH_X_CLIENT_ID` / `..._SECRET` | Sign in with X (also Facebook, LinkedIn); optional |
 | `NUXT_STRIPE_SECRET_KEY` | Stripe secret key (test or live) |
 | `NUXT_STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
 | `NUXT_LULU_MOCK` | `true` to mock Lulu; `false` to call the real API |
@@ -78,7 +88,9 @@ app/pages/                     Home, catalog, book detail, cart, give, checkout/
 app/components/                AppLogo, BookCard, RequestFreeModal
 server/utils/stripe.ts         Stripe client
 server/utils/lulu.ts           Lulu Print API client (OAuth + mock fallback)
-server/utils/requests.ts       Pay-it-forward datastore (Nitro fs storage)
+server/utils/requests.ts       Pay-it-forward datastore (Netlify DB / Neon)
+server/routes/verify/*         Sign-in challenge: prove an X/Facebook/LinkedIn account
+server/utils/accountLookup.ts  Public lookup: find a named GitHub/Bluesky/Mastodon account
 server/api/checkout.post.ts    Create Stripe Checkout session (server-priced)
 server/api/requests/*          Create / list / sponsor book requests
 server/api/stripe/webhook.post Fulfil orders + sponsorships via Lulu

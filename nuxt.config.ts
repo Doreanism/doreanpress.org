@@ -44,7 +44,9 @@ export default defineNuxtConfig({
     // Public accounts a reader can prove they hold in order to post a free-book
     // request.
     // Each is optional: a provider with no credentials simply isn't offered, so
-    // the site runs with one, two, all three — or, in dev, the mock provider.
+    // the site runs with one, two or all three — or none, in which case readers
+    // fall back to naming a public account we look up instead (no credentials,
+    // and a weaker claim, which the site states plainly). No stand-in anywhere.
     oauth: {
       x: { clientId: '', clientSecret: '' },
       facebook: { clientId: '', clientSecret: '' },
