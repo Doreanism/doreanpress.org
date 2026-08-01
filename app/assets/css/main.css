@@ -6,6 +6,19 @@
   --font-serif: 'Fraunces', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
 }
 
+/* The accent changes hue with the theme rather than just shade: a dark blue
+   that carries weight on white, a light teal that lifts off stone. Nuxt UI
+   points `--ui-primary` at one ramp for both modes, so we override it here. */
+:root,
+:host,
+.light {
+  --ui-primary: var(--color-blue-800);
+}
+
+.dark {
+  --ui-primary: var(--color-teal-300);
+}
+
 /* Display serif for the wordmark, headings and book titles */
 .font-display {
   font-family: var(--font-serif);
