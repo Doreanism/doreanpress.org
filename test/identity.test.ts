@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   accountKey,
   CHALLENGE_PROVIDERS,
+  CLAIM_PROVIDERS,
   confirmationClaim,
   describeIdentity,
   IDENTITY_PROVIDERS,
@@ -10,6 +11,7 @@ import {
   LOOKUP_PROVIDERS,
   providerIcon,
   providerLabel,
+  type IdentityProvider,
   type RequesterIdentity
 } from '../shared/identity'
 
@@ -109,6 +111,32 @@ describe('confirmationClaim', () => {
     expect(isControlConfirmed(null)).toBe(false)
     expect(isControlConfirmed(undefined)).toBe(false)
   })
+
+  // The floor. Its wording has to say that nothing was checked, rather than
+  // leave it to be inferred from an absent tick — a sponsor skimming three
+  // cards will not notice what is missing, only what is written.
+  it('says outright that a claimed account was never checked', () => {
+    const claim = confirmationClaim(identity({ provider: 'facebook', confirmation: 'claimed' }))
+    expect(claim).toMatch(/not checked/i)
+    expect(claim).not.toMatch(/verif/i)
+    // The wording may say "nor that it is theirs" — a denial of ownership is the
+    // point. What it must never carry is the assertion the top rung makes.
+    expect(claim).not.toMatch(/so this account is theirs/)
+    expect(claim).not.toMatch(/^Signed in/)
+    // "We found this account" belongs to the rung above and would be a lie here.
+    expect(claim).not.toMatch(/we found/i)
+    expect(isControlConfirmed(identity({ confirmation: 'claimed' }))).toBe(false)
+  })
+
+  it('keeps the three rungs distinguishable to the press, not just the board', () => {
+    const on = (confirmation: RequesterIdentity['confirmation']) =>
+      describeIdentity(identity({ confirmation, handle: 'jane', name: 'Jane' }))
+    expect(on('control')).toBe('Jane (@jane on X)')
+    expect(on('existence')).toMatch(/named, not proved/)
+    expect(on('claimed')).toMatch(/claimed, nothing checked/)
+    // Each must be its own sentence, or the notification cannot be acted on.
+    expect(on('existence')).not.toBe(on('claimed'))
+  })
 })
 
 describe('provider metadata', () => {
@@ -124,7 +152,7 @@ describe('provider metadata', () => {
   // stand-in that satisfies the challenge without an account would quietly undo
   // the only thing the challenge is for.
   it('offers nothing that is not a real provider', () => {
-    const offered = [...CHALLENGE_PROVIDERS, ...LOOKUP_PROVIDERS]
+    const offered = new Set([...CHALLENGE_PROVIDERS, ...LOOKUP_PROVIDERS, ...CLAIM_PROVIDERS])
     expect(Object.keys(IDENTITY_PROVIDERS).sort()).toEqual([...offered].sort())
     for (const provider of LOOKUP_PROVIDERS) {
       expect(IDENTITY_PROVIDERS[provider]).toBeDefined()
@@ -132,9 +160,45 @@ describe('provider metadata', () => {
     }
   })
 
-  it('never offers the same provider both ways', () => {
-    for (const provider of CHALLENGE_PROVIDERS) {
-      expect(LOOKUP_PROVIDERS).not.toContain(provider)
+  // The three rungs have to partition the roster: every provider reachable by
+  // at least one route, and nothing claimable that could be read instead. Which
+  // single route a deployment offers is decided at runtime from credentials —
+  // see offeredLookupProviders / offeredClaimProviders — and is not reachable
+  // from here.
+  it('leaves no provider unreachable, and claims nothing it could read', () => {
+    for (const provider of Object.keys(IDENTITY_PROVIDERS) as IdentityProvider[]) {
+      const reachable = (CHALLENGE_PROVIDERS as string[]).includes(provider)
+        || (LOOKUP_PROVIDERS as string[]).includes(provider)
+        || (CLAIM_PROVIDERS as string[]).includes(provider)
+      expect(reachable, provider).toBe(true)
+    }
+    for (const provider of CLAIM_PROVIDERS) {
+      expect(LOOKUP_PROVIDERS, provider).not.toContain(provider)
+    }
+  })
+
+  // A reader has to be told what to type wherever they are asked to type an
+  // account, and that is now both of the weaker routes.
+  it('tells the reader what to type for every account they can name', () => {
+    for (const provider of [...LOOKUP_PROVIDERS, ...CLAIM_PROVIDERS]) {
+      expect(IDENTITY_PROVIDERS[provider].accountHint, provider).toBeTruthy()
+      expect(IDENTITY_PROVIDERS[provider].accountExample, provider).toBeTruthy()
+    }
+  })
+
+  // The lists may overlap — GitHub can be signed into *or* named — but only for
+  // a provider that can genuinely do the stronger check. An overlap on anything
+  // else would mean a lookup-only provider had been filed as provable.
+  //
+  // Which of the two a deployment actually offers is decided at runtime by
+  // `offeredLookupProviders`, and it is never both: configuring the challenge
+  // withdraws the lookup. That rule reads runtime config, so it is not reachable
+  // from here — it is the untested handler rule flagged in the docs.
+  it('only lets a provider sit on both lists if it can prove control', () => {
+    const both = CHALLENGE_PROVIDERS.filter(p => (LOOKUP_PROVIDERS as string[]).includes(p))
+    expect(both).toEqual(['github'])
+    for (const provider of both) {
+      expect(IDENTITY_PROVIDERS[provider].confirms).toBe('control')
     }
   })
 
@@ -145,27 +209,43 @@ describe('provider metadata', () => {
       expect(IDENTITY_PROVIDERS[provider].confirms).toBe('control')
     }
     for (const provider of LOOKUP_PROVIDERS) {
-      expect(IDENTITY_PROVIDERS[provider].confirms).toBe('existence')
+      // `confirms` is the best a provider can do, so one that is only ever
+      // looked up must say so. GitHub is exempt because it is also signed into.
+      if (!(CHALLENGE_PROVIDERS as string[]).includes(provider)) {
+        expect(IDENTITY_PROVIDERS[provider].confirms).toBe('existence')
+      }
       // A reader has to be told what to type, or the field is a guessing game.
       expect(IDENTITY_PROVIDERS[provider].accountHint).toBeTruthy()
       expect(IDENTITY_PROVIDERS[provider].accountExample).toBeTruthy()
     }
   })
 
-  // None of these three can be looked up: Facebook removed username lookup from
-  // the Graph API, LinkedIn has no public profile API, and X's needs a paid
-  // token. Adding one here would mean somebody had reached for HTML scraping.
+  // None of these can be looked up: Facebook removed username lookup from the
+  // Graph API, LinkedIn has no public profile API, X's needs a paid token, and
+  // Twitch and TikTok both require an app token for theirs. Adding one here
+  // would mean somebody had reached for HTML scraping.
   it('keeps the providers with no public lookup API out of the lookup list', () => {
-    expect(LOOKUP_PROVIDERS).not.toContain('x')
-    expect(LOOKUP_PROVIDERS).not.toContain('facebook')
-    expect(LOOKUP_PROVIDERS).not.toContain('linkedin')
+    for (const provider of ['x', 'facebook', 'linkedin', 'twitch', 'tiktok']) {
+      expect(LOOKUP_PROVIDERS).not.toContain(provider)
+    }
   })
 
   it('only claims a public profile link for providers that actually give one', () => {
     // Facebook's user_link and LinkedIn's vanity name are both behind partner
-    // review; claiming otherwise would render a badge that links nowhere.
+    // review, and TikTok's handle behind the user.info.profile scope; claiming
+    // otherwise would render a badge that links nowhere.
     expect(IDENTITY_PROVIDERS.x.linkable).toBe(true)
+    expect(IDENTITY_PROVIDERS.twitch.linkable).toBe(true)
     expect(IDENTITY_PROVIDERS.facebook.linkable).toBe(false)
     expect(IDENTITY_PROVIDERS.linkedin.linkable).toBe(false)
+    expect(IDENTITY_PROVIDERS.tiktok.linkable).toBe(false)
+  })
+
+  // Being publicly readable is what makes a provider lookup-able in the first
+  // place, so every one of them owes a sponsor something to open.
+  it('gives a sponsor a profile to open for every account that can be named', () => {
+    for (const provider of LOOKUP_PROVIDERS) {
+      expect(IDENTITY_PROVIDERS[provider].linkable, provider).toBe(true)
+    }
   })
 })

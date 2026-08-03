@@ -44,13 +44,21 @@ export default defineNuxtConfig({
     // Public accounts a reader can prove they hold in order to post a free-book
     // request.
     // Each is optional: a provider with no credentials simply isn't offered, so
-    // the site runs with one, two or all three — or none, in which case readers
-    // fall back to naming a public account we look up instead (no credentials,
-    // and a weaker claim, which the site states plainly). No stand-in anywhere.
+    // the site runs with one, some or all of them — or none, in which case
+    // readers fall back to naming a public account we look up instead (no
+    // credentials, and a weaker claim, which the site states plainly). No
+    // stand-in anywhere.
+    // Configuring GitHub here withdraws GitHub from the lookup list, since the
+    // same account can then be proved rather than merely named.
     oauth: {
       x: { clientId: '', clientSecret: '' },
       facebook: { clientId: '', clientSecret: '' },
-      linkedin: { clientId: '', clientSecret: '' }
+      linkedin: { clientId: '', clientSecret: '' },
+      github: { clientId: '', clientSecret: '' },
+      twitch: { clientId: '', clientSecret: '' },
+      // `clientKey`, not `clientId` — TikTok's own name for it, and what
+      // nuxt-auth-utils reads. `configuredProviders` accepts either.
+      tiktok: { clientKey: '', clientSecret: '' }
     },
     public: {
       siteUrl: 'http://localhost:3000',

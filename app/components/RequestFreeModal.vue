@@ -32,6 +32,9 @@ const { proof, identity, verified, refresh: refreshProof } = useIdentityProof()
 /** Whether the account in hand was signed into, or merely named and found. */
 const proved = computed(() => isControlConfirmed(identity.value))
 
+/** Weaker still: named at a provider we cannot check, and so not checked. */
+const told = computed(() => identity.value?.confirmation === 'claimed')
+
 // The challenge means leaving the site, so the modal can't survive the round
 // trip on its own. It asks the provider to come back to this page with a marker
 // and reopens itself — otherwise the reader lands back on the cart wondering
@@ -268,7 +271,7 @@ async function submit() {
             <p class="flex items-center gap-1.5 text-sm font-medium text-highlighted">
               <span class="truncate">{{ identity.name }}</span>
               <UIcon
-                :name="proved ? 'i-lucide-badge-check' : 'i-lucide-search-check'"
+                :name="told ? 'i-lucide-message-square-quote' : proved ? 'i-lucide-badge-check' : 'i-lucide-search-check'"
                 class="size-4 shrink-0"
                 :class="proved ? 'text-primary' : 'text-dimmed'"
               />
@@ -287,6 +290,14 @@ async function submit() {
             >
               Verified, and shown on the board beside your message so sponsors know who
               they're giving to.
+            </p>
+            <p
+              v-else-if="told"
+              class="text-xs text-muted"
+            >
+              Shown on the board beside your message. Because we can't check this one at
+              all, your request will say you told us about it and we took your word —
+              with a link so a sponsor can look for themselves.
             </p>
             <p
               v-else

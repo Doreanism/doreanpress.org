@@ -34,18 +34,30 @@ See `.env.example`. With no keys, **Lulu runs in mock mode** (no real print
 orders) and Stripe is disabled. To go live, set the `NUXT_*` variables.
 
 Free-book requests need a public account behind them, by one of two routes, and
-neither has a mock mode. **Naming an account** (GitHub, Bluesky, Mastodon) needs
-no credentials at all — public read-only APIs — so the request flow works out of
-the box. **Signing in** (X, Facebook, LinkedIn) is the stronger check and needs
-real OAuth credentials; X is the cheapest to register. The two are not
-equivalent and the site says which one happened — see
+neither has a mock mode. **Naming an account** (GitHub, Bluesky, Mastodon,
+GitLab, Codeberg, Stack Overflow) needs no credentials at all — public read-only
+APIs — so the request flow works out of the box. **Signing in** (X, Facebook,
+LinkedIn, GitHub, Twitch, TikTok) is the stronger check and needs real OAuth
+credentials; GitHub is the cheapest to register. The two are not equivalent and
+the site says which one happened — see
 [docs/verified-requests.md](docs/verified-requests.md).
+
+Failing both, a reader can **just tell us** where to find them — pick a social
+media, type a username, and we check nothing at all beyond the shape of the
+handle. That is the fallback for X, Facebook, LinkedIn, Twitch and TikTok, which
+have no public API to read, and it applies only while their credentials are
+blank. The board says plainly which of the three happened.
+
+No deployment offers the same provider two ways: each appears by the strongest
+route available for it, so configuring credentials for a provider removes it from
+the weaker lists at the same moment its button appears.
 
 | Variable | Purpose |
 | --- | --- |
 | `NUXT_PUBLIC_SITE_URL` | Base URL (Stripe success/cancel + OG images) |
 | `NUXT_SESSION_PASSWORD` | Seals the identity-proof cookie (32+ chars) |
-| `NUXT_OAUTH_X_CLIENT_ID` / `..._SECRET` | Sign in with X (also Facebook, LinkedIn); optional |
+| `NUXT_OAUTH_GITHUB_CLIENT_ID` / `..._SECRET` | Sign in with GitHub (also X, Facebook, LinkedIn, Twitch); optional |
+| `NUXT_OAUTH_TIKTOK_CLIENT_KEY` / `..._SECRET` | Sign in with TikTok — a *key*, not an id; optional |
 | `NUXT_STRIPE_SECRET_KEY` | Stripe secret key (test or live) |
 | `NUXT_STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
 | `NUXT_LULU_MOCK` | `true` to mock Lulu; `false` to call the real API |
@@ -89,8 +101,8 @@ app/components/                AppLogo, BookCard, RequestFreeModal
 server/utils/stripe.ts         Stripe client
 server/utils/lulu.ts           Lulu Print API client (OAuth + mock fallback)
 server/utils/requests.ts       Pay-it-forward datastore (Netlify DB / Neon)
-server/routes/verify/*         Sign-in challenge: prove an X/Facebook/LinkedIn account
-server/utils/accountLookup.ts  Public lookup: find a named GitHub/Bluesky/Mastodon account
+server/routes/verify/*         Sign-in challenge: prove an account you can log into
+server/utils/accountLookup.ts  Public lookup: find an account somebody has named
 server/api/checkout.post.ts    Create Stripe Checkout session (server-priced)
 server/api/requests/*          Create / list / sponsor book requests
 server/api/stripe/webhook.post Fulfil orders + sponsorships via Lulu

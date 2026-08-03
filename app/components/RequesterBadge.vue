@@ -10,21 +10,28 @@ import { providerLabel, providerIcon, type RequesterIdentity } from '#shared/ide
 // thirty seconds on the real account learns far more than any badge we could
 // draw for them.
 //
-// There are three states here, not two, and flattening them would be the one
+// There are four states here, not two, and flattening them would be the one
 // unforgivable bug in this component:
 //
 //   proved   — the reader signed in; the account is theirs.
 //   named    — the reader typed it and we found it; it exists, and that is all.
+//   told     — the reader typed it and we checked nothing whatever.
 //   none     — posted before any of this was required.
 //
-// A *named* account gets no tick and no word beginning with "verif". It says
-// what it is in plain words, because a sponsor reading quickly will otherwise
-// carry away the stronger claim, and it is their money.
+// Neither of the weak two gets a tick or any word beginning with "verif". Each
+// says what it is in plain words, because a sponsor reading quickly will
+// otherwise carry away the strongest claim, and it is their money.
+//
+// The gap between *named* and *told* is easy to wave away as a shade of grey and
+// it is not: one means we fetched a page and the account was there, the other
+// means somebody typed a name into a box. A sponsor deciding between two cards
+// deserves to know which they are looking at.
 const props = defineProps<{ requester: RequesterIdentity | null }>()
 
 const label = computed(() => (props.requester ? providerLabel(props.requester.provider) : ''))
 const icon = computed(() => (props.requester ? providerIcon(props.requester.provider) : ''))
 const proved = computed(() => props.requester?.confirmation === 'control')
+const told = computed(() => props.requester?.confirmation === 'claimed')
 
 /** Account age is the best signal we have where control was never established. */
 const since = computed(() => {
@@ -99,9 +106,9 @@ const since = computed(() => {
     </component>
 
     <!--
-      One line, always present, saying which of the two checks happened. It sits
-      outside the link so it cannot be mistaken for part of the profile, and it
-      is worded for someone who will read exactly one of these cards.
+      One line, always present, saying which of the three checks happened. It
+      sits outside the link so it cannot be mistaken for part of the profile,
+      and it is worded for someone who will read exactly one of these cards.
     -->
     <p
       v-if="proved"
@@ -112,6 +119,19 @@ const since = computed(() => {
         class="size-3 shrink-0 text-primary"
       />
       Signed in with {{ label }} — the account is theirs.
+    </p>
+    <p
+      v-else-if="told"
+      class="flex items-start gap-1 px-0.5 text-xs text-dimmed"
+    >
+      <UIcon
+        name="i-lucide-message-square-quote"
+        class="mt-px size-3 shrink-0"
+      />
+      <span>
+        They told us this is their {{ label }}. We haven't checked that it exists or that
+        it's theirs — {{ label }} gives us no way to. Open it and judge for yourself.
+      </span>
     </p>
     <p
       v-else

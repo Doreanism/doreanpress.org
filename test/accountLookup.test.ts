@@ -39,6 +39,24 @@ describe('normalizeAccount', () => {
     expect(normalizeAccount('github', 'https://github.com/')).toBe('')
   })
 
+  // A Stack Overflow profile is /users/<id>/<slug>, and it is the number that
+  // identifies the account — the slug is the display name of the moment.
+  it('takes the id, not the name slug, out of a Stack Overflow link', () => {
+    expect(normalizeAccount('stackoverflow', 'https://stackoverflow.com/users/22656/jon-skeet'))
+      .toBe('22656')
+    expect(normalizeAccount('stackoverflow', 'https://stackoverflow.com/users/22656'))
+      .toBe('22656')
+  })
+
+  it('leaves a Stack Overflow id typed on its own alone', () => {
+    expect(normalizeAccount('stackoverflow', ' 22656 ')).toBe('22656')
+  })
+
+  it('takes the account out of a GitLab or Codeberg profile link', () => {
+    expect(normalizeAccount('gitlab', 'https://gitlab.com/alice')).toBe('alice')
+    expect(normalizeAccount('codeberg', 'https://codeberg.org/alice/')).toBe('alice')
+  })
+
   // Malformed input is left as typed rather than thrown over: it fails the
   // provider's own shape check a moment later, which is the same answer by a
   // calmer route.
@@ -50,8 +68,8 @@ describe('normalizeAccount', () => {
 
 describe('lookupAccount', () => {
   it('refuses a provider that has no public lookup', async () => {
-    // X, Facebook and LinkedIn can only be proved, never looked up.
-    for (const provider of ['x', 'facebook', 'linkedin', 'nonsense']) {
+    // These five can only be proved, never looked up.
+    for (const provider of ['x', 'facebook', 'linkedin', 'twitch', 'tiktok', 'nonsense']) {
       expect(await lookupAccount(provider, 'someone')).toEqual({ status: 'unsupported' })
     }
   })
@@ -67,6 +85,20 @@ describe('lookupAccount', () => {
     expect(await lookupAccount('bluesky', 'nodotshere')).toEqual({ status: 'missing' })
     expect(await lookupAccount('mastodon', 'noserver')).toEqual({ status: 'missing' })
     expect(await lookupAccount('mastodon', 'too@many@ats')).toEqual({ status: 'missing' })
+    expect(await lookupAccount('gitlab', 'not a username')).toEqual({ status: 'missing' })
+    expect(await lookupAccount('codeberg', 'has spaces')).toEqual({ status: 'missing' })
+    expect(await lookupAccount('codeberg', '-leading-hyphen')).toEqual({ status: 'missing' })
+  })
+
+  // Stack Overflow is the one provider whose account is a number, because its
+  // display names are not unique. A name typed into that field is refused
+  // rather than searched for, since a search could only guess which of several
+  // people the reader meant — and guessing here puts a stranger's face on
+  // somebody's request.
+  it('refuses a Stack Overflow account that is not a user id', async () => {
+    for (const account of ['jon-skeet', 'Jon Skeet', '', '12x', '-1']) {
+      expect(await lookupAccount('stackoverflow', account), account).toEqual({ status: 'missing' })
+    }
   })
 
   // Mastodon is the one provider whose *host* comes from the reader, so this is

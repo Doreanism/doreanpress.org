@@ -14,24 +14,39 @@
 // the board, the request form and the notification emails all describe an
 // account the same way.
 
-export type IdentityProvider = 'x' | 'facebook' | 'linkedin' | 'github' | 'bluesky' | 'mastodon'
+export type IdentityProvider
+  = | 'x' | 'facebook' | 'linkedin' | 'twitch' | 'tiktok'
+    | 'github' | 'bluesky' | 'mastodon' | 'gitlab' | 'codeberg' | 'stackoverflow'
 
 /**
  * What a completed check actually establishes. The single most important
  * distinction in this file — everything a sponsor is shown depends on it.
+ *
+ * Three rungs, strongest first:
  *
  * - `control` — the reader went to the provider, signed in, and the provider
  *   told us who they are. They *are* this account.
  * - `existence` — the reader typed an account and we fetched its public profile.
  *   The account is real and looks as described; whether the reader is the person
  *   holding it is not established, and must never be implied.
+ * - `claimed` — the reader typed an account and we checked *nothing*. Not that
+ *   it is theirs, not even that it is there. All we did was confirm the handle
+ *   is shaped like one that provider could issue, and build a link a sponsor can
+ *   open for themselves.
  *
- * `existence` is the weaker of the two in a specific, load-bearing way: handles
- * are free to type, so it neither prevents impersonation nor makes a second
- * posting cost anything. Rules that lean on scarcity have to bite somewhere else
- * for these — see the doorstep check in `POST /api/requests`.
+ * The bottom two are weak in a specific, load-bearing way: handles are free to
+ * type, so neither prevents impersonation nor makes a second posting cost
+ * anything. Rules that lean on scarcity have to bite somewhere else for these —
+ * see the doorstep check in `POST /api/requests`, which keys off
+ * `confirmation !== 'control'` and so covers both without needing to know about
+ * this third rung at all.
+ *
+ * `claimed` exists because Facebook, X and LinkedIn have no public profile API,
+ * so on a deployment without their OAuth credentials there is otherwise no way
+ * for a reader on those to say so. It buys the sponsor exactly one thing — an
+ * address to go and look at — and the copy must never suggest it buys more.
  */
-export type Confirmation = 'control' | 'existence'
+export type Confirmation = 'control' | 'existence' | 'claimed'
 
 export interface RequesterIdentity {
   provider: IdentityProvider
@@ -100,12 +115,24 @@ export interface ProviderMeta {
   label: string
   icon: string
   /**
-   * Whether the provider hands us a public profile URL. X does. Facebook's
-   * `user_link` and LinkedIn's vanity name both sit behind partner review, so
-   * those accounts show as a verified name and photo with nothing to click.
+   * Whether the provider hands us a public profile URL *as configured here*.
+   *
+   * X, Twitch and every lookup provider do. Facebook's `user_link` and
+   * LinkedIn's vanity name both sit behind partner review, and TikTok's handle
+   * needs the `user.info.profile` scope approved, so those three show as a
+   * verified name and photo with nothing to click. The TikTok route already
+   * reads the handle where it is granted — this stays false until approval is
+   * the ordinary case rather than the exception.
    */
   linkable: boolean
-  /** The strongest thing this provider can be made to establish here. */
+  /**
+   * The strongest thing this provider can be made to establish here.
+   *
+   * Not what a given identity carries — that is `confirmation` on the identity
+   * itself, set by whichever route did the checking. A provider offering both
+   * routes reads `control` here, because that is the best it can do; an account
+   * of theirs that was merely named still carries `existence`.
+   */
   confirms: Confirmation
   /** For lookup providers: what the reader is being asked to type. */
   accountHint?: string
@@ -114,14 +141,56 @@ export interface ProviderMeta {
 }
 
 export const IDENTITY_PROVIDERS: Record<IdentityProvider, ProviderMeta> = {
-  x: { label: 'X', icon: 'i-simple-icons-x', linkable: true, confirms: 'control' },
-  facebook: { label: 'Facebook', icon: 'i-simple-icons-facebook', linkable: false, confirms: 'control' },
-  linkedin: { label: 'LinkedIn', icon: 'i-simple-icons-linkedin', linkable: false, confirms: 'control' },
+  // The five with no public lookup API. Each still carries an account hint,
+  // because when this deployment has no credentials for one the reader can name
+  // it anyway — unchecked, and labelled so. See CLAIM_PROVIDERS.
+  x: {
+    label: 'X',
+    icon: 'i-simple-icons-x',
+    linkable: true,
+    confirms: 'control',
+    accountHint: 'username',
+    accountExample: 'jack'
+  },
+  facebook: {
+    label: 'Facebook',
+    icon: 'i-simple-icons-facebook',
+    linkable: false,
+    confirms: 'control',
+    accountHint: 'username, or the name in your profile link',
+    accountExample: 'jane.doe'
+  },
+  linkedin: {
+    label: 'LinkedIn',
+    icon: 'i-simple-icons-linkedin',
+    linkable: false,
+    confirms: 'control',
+    accountHint: 'the name at the end of your profile link',
+    accountExample: 'jane-doe-1a2b3c'
+  },
+  twitch: {
+    label: 'Twitch',
+    icon: 'i-simple-icons-twitch',
+    linkable: true,
+    confirms: 'control',
+    accountHint: 'username',
+    accountExample: 'alice'
+  },
+  tiktok: {
+    label: 'TikTok',
+    icon: 'i-simple-icons-tiktok',
+    linkable: false,
+    confirms: 'control',
+    accountHint: 'username',
+    accountExample: 'alice'
+  },
+  // The one provider on both lists: a reader can sign in with GitHub or, where
+  // that is not configured, simply name an account for us to read.
   github: {
     label: 'GitHub',
     icon: 'i-simple-icons-github',
     linkable: true,
-    confirms: 'existence',
+    confirms: 'control',
     accountHint: 'username',
     accountExample: 'torvalds'
   },
@@ -140,6 +209,34 @@ export const IDENTITY_PROVIDERS: Record<IdentityProvider, ProviderMeta> = {
     confirms: 'existence',
     accountHint: 'full address, including the server',
     accountExample: 'alice@mastodon.social'
+  },
+  gitlab: {
+    label: 'GitLab',
+    icon: 'i-simple-icons-gitlab',
+    linkable: true,
+    confirms: 'existence',
+    accountHint: 'username',
+    accountExample: 'alice'
+  },
+  codeberg: {
+    label: 'Codeberg',
+    icon: 'i-simple-icons-codeberg',
+    linkable: true,
+    confirms: 'existence',
+    accountHint: 'username',
+    accountExample: 'alice'
+  },
+  stackoverflow: {
+    label: 'Stack Overflow',
+    icon: 'i-simple-icons-stackoverflow',
+    linkable: true,
+    confirms: 'existence',
+    // The odd one out, and it has to be: Stack Overflow display names are not
+    // unique — two people can hold the same one — so a name is not an account
+    // there. The numeric id in the profile URL is, and asking for the link is
+    // kinder than asking somebody to dig the number out of it themselves.
+    accountHint: 'profile link, or the number in it',
+    accountExample: 'https://stackoverflow.com/users/22656'
   }
 }
 
@@ -151,26 +248,72 @@ export const IDENTITY_PROVIDERS: Record<IdentityProvider, ProviderMeta> = {
  * is not a challenge, and one that behaves differently on a developer's machine
  * is not the thing being tested.
  */
-export type ChallengeProvider = Extract<IdentityProvider, 'x' | 'facebook' | 'linkedin'>
+export type ChallengeProvider = Extract<
+  IdentityProvider, 'x' | 'facebook' | 'linkedin' | 'twitch' | 'tiktok' | 'github'
+>
 
-export const CHALLENGE_PROVIDERS: ChallengeProvider[] = ['x', 'facebook', 'linkedin']
+/** In the order offered, which is the order they were added. */
+export const CHALLENGE_PROVIDERS: ChallengeProvider[] = [
+  'x', 'facebook', 'linkedin', 'github', 'twitch', 'tiktok'
+]
 
 /**
  * Providers whose accounts a reader can simply *name*, for us to go and read.
  *
- * These three are here because they are the ones that actually allow it: each
- * serves a public profile over a documented, unauthenticated API and answers
- * "no such account" distinguishably. X, Facebook and LinkedIn are absent from
- * this list and cannot join it — Facebook removed username lookup from the Graph
- * API, LinkedIn has no public profile API at all, and X's requires a paid bearer
- * token. Reading their HTML instead would be scraping: against their terms,
- * blocked from server IPs, and broken by the next markup change. If one of them
- * ever needs to be offered this way, it needs credentials and a real client, not
- * a page fetch.
+ * Each is here because it actually allows it: a public profile over a
+ * documented, unauthenticated API that answers "no such account"
+ * distinguishably. That is the whole bar, and it is what keeps X, Facebook and
+ * LinkedIn out — Facebook removed username lookup from the Graph API, LinkedIn
+ * has no public profile API at all, and X's requires a paid bearer token.
+ * Reading their HTML instead would be scraping: against their terms, blocked
+ * from server IPs, and broken by the next markup change. If one of them ever
+ * needs to be offered this way, it needs credentials and a real client, not a
+ * page fetch.
  */
-export type LookupProvider = Extract<IdentityProvider, 'github' | 'bluesky' | 'mastodon'>
+export type LookupProvider = Extract<
+  IdentityProvider, 'github' | 'bluesky' | 'mastodon' | 'gitlab' | 'codeberg' | 'stackoverflow'
+>
 
-export const LOOKUP_PROVIDERS: LookupProvider[] = ['github', 'bluesky', 'mastodon']
+export const LOOKUP_PROVIDERS: LookupProvider[] = [
+  'github', 'bluesky', 'mastodon', 'gitlab', 'codeberg', 'stackoverflow'
+]
+
+/**
+ * Providers a reader can only *say* they are on.
+ *
+ * Exactly the providers with no public lookup API — so this list is derived,
+ * not chosen, and a provider joins `LOOKUP_PROVIDERS` the moment one becomes
+ * available rather than staying here out of habit. Nothing that can be read is
+ * ever merely claimed.
+ *
+ * This is the floor of the three rungs, and it is only ever reached when both
+ * of the others are unavailable: sign-in needs credentials this deployment may
+ * not have, and these five cannot be looked up at any price. The alternative to
+ * offering it is telling a reader whose only account is on Facebook that they
+ * may not ask for a book, which is a worse answer than showing a sponsor an
+ * unchecked handle clearly labelled as unchecked.
+ */
+export type ClaimProvider = Exclude<IdentityProvider, LookupProvider>
+
+export const CLAIM_PROVIDERS: ClaimProvider[] = CHALLENGE_PROVIDERS.filter(
+  (p): p is ClaimProvider => !(LOOKUP_PROVIDERS as string[]).includes(p)
+)
+
+/**
+ * The two lists overlap, and a deployment must still offer each provider only
+ * one way.
+ *
+ * GitHub can be signed into *and* read publicly. Where its credentials are set,
+ * offering both would be strictly worse than offering the challenge alone: the
+ * only reader who would choose to merely name a GitHub account, with the sign-in
+ * button right beside it, is one who cannot sign into it. So the stronger route
+ * wins and the weaker one is withdrawn — see `offeredLookupProviders`, which
+ * decides this per deployment, and the matching refusal in
+ * `POST /api/verify/lookup` that stops it being skipped past.
+ */
+export function isChallengeProvider(value: string): value is ChallengeProvider {
+  return (CHALLENGE_PROVIDERS as string[]).includes(value)
+}
 
 export function providerLabel(provider: IdentityProvider): string {
   return IDENTITY_PROVIDERS[provider]?.label ?? provider
@@ -206,23 +349,34 @@ export function isControlConfirmed(
 /**
  * The claim being made about an account, in the site's own words.
  *
- * One sentence, and both branches are load-bearing. The `existence` wording has
- * to stop a reasonable person concluding that we checked the reader is this
- * person, because we did not, and a sponsor is about to spend money on the
- * difference. Do not soften it into "verified".
+ * One sentence each, and every branch is load-bearing. The weaker two have to
+ * stop a reasonable person concluding that we checked the reader is this person,
+ * because we did not, and a sponsor is about to spend money on the difference.
+ * Do not soften either into "verified".
+ *
+ * The `claimed` wording says *nothing was checked* rather than leaving it to be
+ * inferred from what is missing. A reader skimming three cards will not notice
+ * an absent tick; they will notice a sentence that says we did not look.
  */
 export function confirmationClaim(identity: RequesterIdentity): string {
   const label = providerLabel(identity.provider)
-  return identity.confirmation === 'control'
-    ? `Signed in with ${label}, so this account is theirs.`
-    : `We found this ${label} account and read its public profile. We did not check that the person asking is the one who holds it.`
+  switch (identity.confirmation) {
+    case 'control':
+      return `Signed in with ${label}, so this account is theirs.`
+    case 'existence':
+      return `We found this ${label} account and read its public profile. We did not check that the person asking is the one who holds it.`
+    default:
+      return `They told us this is their ${label} account. We have not checked that it exists, or that it is theirs — ${label} gives us no way to.`
+  }
 }
 
 /**
  * One-line description for emails and logs: 'Jane Doe (@jane on X)'.
  *
- * A named-but-unproved account is marked as such, so the press reading a
- * notification is never left to assume the stronger of the two checks.
+ * Anything short of `control` is marked as such, so the press reading a
+ * notification is never left to assume the strongest of the three checks. The
+ * two weaker ones are distinguished from each other too — "we read this profile"
+ * and "we took their word for it" are different things to act on.
  */
 export function describeIdentity(identity: RequesterIdentity | null | undefined): string {
   if (!identity) return 'unverified'
@@ -230,5 +384,9 @@ export function describeIdentity(identity: RequesterIdentity | null | undefined)
   const who = identity.handle
     ? `${identity.name} (@${identity.handle} on ${label})`
     : `${identity.name} (${label})`
-  return identity.confirmation === 'control' ? who : `${who} — named, not proved`
+  switch (identity.confirmation) {
+    case 'control': return who
+    case 'existence': return `${who} — named, not proved`
+    default: return `${who} — claimed, nothing checked`
+  }
 }

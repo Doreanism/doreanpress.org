@@ -25,6 +25,19 @@ export default defineEventHandler(async (event) => {
   if (!isLookupProvider(provider)) {
     throw createError({ statusCode: 400, statusMessage: 'That is not a provider we can look an account up on.' })
   }
+
+  // Where the same provider can be signed into here, naming an account at it is
+  // not on offer — and this is the check that means it, rather than the list in
+  // `providers.get.ts`, which only decides what gets drawn. Without it, a reader
+  // who can prove a GitHub account could POST straight past the button and claim
+  // somebody else's instead, which is the one thing the stronger route exists to
+  // prevent.
+  if ((configuredProviders(event) as string[]).includes(provider)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `You can sign in with ${providerLabel(provider)} here, which proves the account is yours — please use that instead.`
+    })
+  }
   if (!account.trim()) {
     throw createError({ statusCode: 400, statusMessage: 'Please type your account first.' })
   }
