@@ -157,6 +157,13 @@ export interface CreateRequestInput {
 
 // Timestamps are stored as ISO text and the items/address as jsonb, so a row
 // maps back to BookRequest losslessly with no Date/JSON coercion surprises.
+//
+// Memoized so the migration runs once per process — but only once it has
+// *succeeded*. A rejected promise left in this slot is remembered just as
+// firmly as a fulfilled one, so a database that was briefly unreachable would
+// keep re-throwing that first connection error at every request for the life of
+// the process, long after it came back. Clearing the slot on failure means the
+// next caller simply tries again.
 let schema: Promise<void> | null = null
 function ensureSchema() {
   if (!schema) {
@@ -245,7 +252,10 @@ function ensureSchema() {
         `
         for (const spent of rest) await sql`DELETE FROM book_requests WHERE id = ${spent.id}`
       }
-    })()
+    })().catch((err) => {
+      schema = null
+      throw err
+    })
   }
   return schema
 }
