@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isSameAccount } from '#shared/identity'
+import { sharesAccount } from '#shared/identity'
 import type { PublicBookRequest } from '~~/server/utils/requests'
 
 useSeoMeta({
@@ -9,7 +9,7 @@ useSeoMeta({
 
 const route = useRoute()
 const toast = useToast()
-const { identity, verified } = useIdentityProof()
+const { identities, verified } = useIdentityProof()
 
 const id = computed(() => String(route.query.id || ''))
 const removing = ref(false)
@@ -27,8 +27,8 @@ const isOwner = computed(() => {
   if (!request.value) return false
   // A posting from before the challenge existed has no account to match, so the
   // unguessable link in the confirmation email remains its only key.
-  if (!request.value.requester) return true
-  return isSameAccount(identity.value, request.value.requester)
+  if (request.value.requesters.length === 0) return true
+  return sharesAccount(identities.value, request.value.requesters)
 })
 
 async function withdraw() {
@@ -98,7 +98,7 @@ async function withdraw() {
             the reader who posted it can take it down — verify again with the right
             account, if it was you.
           </p>
-          <RequesterBadge :requester="request.requester" />
+          <RequesterBadge :requesters="request.requesters" />
           <IdentityChallenge />
         </template>
 

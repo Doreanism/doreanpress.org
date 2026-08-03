@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   accountKey,
+  byStrength,
   CHALLENGE_PROVIDERS,
   CLAIM_PROVIDERS,
   confirmationClaim,
@@ -8,7 +9,10 @@ import {
   IDENTITY_PROVIDERS,
   isControlConfirmed,
   isSameAccount,
+  hasControl,
   LOOKUP_PROVIDERS,
+  primaryIdentity,
+  sharesAccount,
   providerIcon,
   providerLabel,
   type IdentityProvider,
@@ -247,5 +251,81 @@ describe('provider metadata', () => {
     for (const provider of LOOKUP_PROVIDERS) {
       expect(IDENTITY_PROVIDERS[provider].linkable, provider).toBe(true)
     }
+  })
+})
+
+// ── several accounts on one request ──
+//
+// The rules that used to read one identity now read a set, and each of these
+// pins the direction its answer has to fail in. Getting `hasControl` backwards
+// would quietly lift a scarcity rule; getting `primaryIdentity` backwards would
+// file a proved account under a claimed one's key.
+describe('primaryIdentity', () => {
+  const proved = identity({ subject: '1', confirmation: 'control' })
+  const found = identity({ subject: '2', confirmation: 'existence' })
+  const told = identity({ subject: '3', confirmation: 'claimed' })
+
+  it('speaks for the set with its best-checked account', () => {
+    expect(primaryIdentity([told, found, proved])).toBe(proved)
+    expect(primaryIdentity([told, found])).toBe(found)
+    expect(primaryIdentity([told])).toBe(told)
+  })
+
+  it('is null for nothing at all, so unverified rows stay unverified', () => {
+    expect(primaryIdentity([])).toBeNull()
+    expect(primaryIdentity(null)).toBeNull()
+  })
+
+  it('keeps the order it was given where the checks are equal', () => {
+    const first = identity({ subject: 'a', confirmation: 'existence' })
+    const second = identity({ subject: 'b', confirmation: 'existence' })
+    expect(primaryIdentity([first, second])).toBe(first)
+  })
+})
+
+describe('byStrength', () => {
+  it('draws the best evidence first without disturbing the caller\'s array', () => {
+    const told = identity({ subject: '3', confirmation: 'claimed' })
+    const proved = identity({ subject: '1', confirmation: 'control' })
+    const given = [told, proved]
+    expect(byStrength(given).map(i => i.confirmation)).toEqual(['control', 'claimed'])
+    expect(given[0]).toBe(told)
+  })
+})
+
+describe('hasControl', () => {
+  // Any, not all: one signed-in account among several has still been paid for,
+  // and the scarcity rules exist to charge for exactly that.
+  it('is true when any one account was signed into', () => {
+    expect(hasControl([
+      identity({ subject: '3', confirmation: 'claimed' }),
+      identity({ subject: '1', confirmation: 'control' })
+    ])).toBe(true)
+  })
+
+  it('is false when nothing was, including for an empty set', () => {
+    expect(hasControl([identity({ confirmation: 'existence' })])).toBe(false)
+    expect(hasControl([identity({ confirmation: 'claimed' })])).toBe(false)
+    expect(hasControl([])).toBe(false)
+  })
+})
+
+describe('sharesAccount', () => {
+  const ada = identity({ subject: '1' })
+  const grace = identity({ subject: '2' })
+
+  it('matches on any account in common, so one is enough to prove a posting is yours', () => {
+    expect(sharesAccount([grace, ada], [ada])).toBe(true)
+  })
+
+  it('does not match sets that merely look alike', () => {
+    expect(sharesAccount([ada], [grace])).toBe(false)
+    expect(sharesAccount([ada], [{ ...ada, provider: 'linkedin' as const }])).toBe(false)
+  })
+
+  it('is false for nothing, rather than vacuously true', () => {
+    expect(sharesAccount([], [ada])).toBe(false)
+    expect(sharesAccount([ada], [])).toBe(false)
+    expect(sharesAccount(null, undefined)).toBe(false)
   })
 })

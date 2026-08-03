@@ -12,10 +12,10 @@
 // reason X, Facebook and LinkedIn cannot be added (see LOOKUP_PROVIDERS).
 //
 // How a provider says "no such account" is not uniform, and getting it wrong
-// breaks rule 1 below in the direction that matters. GitHub, Codeberg and
-// Mastodon answer 404. Bluesky answers 400. GitLab and Stack Overflow answer
-// *200 with an empty list*, so for those the absence is in the body and reading
-// only the status code would report every unknown handle as found.
+// breaks rule 1 below in the direction that matters. GitHub and Mastodon answer
+// 404; Bluesky answers 400; GitLab answers *200 with an empty list*, so there the
+// absence is in the body and reading only the status code would report every
+// unknown handle as found.
 //
 // Three rules hold for every adapter below:
 //
@@ -71,12 +71,7 @@ export function normalizeAccount(provider: IdentityProvider, raw: string): strin
       const segments = url.pathname.split('/').filter(Boolean)
       const last = segments[segments.length - 1] ?? ''
 
-      if (provider === 'stackoverflow') {
-        // `/users/22656/jon-skeet` — the number is the account. The slug after
-        // it is decoration, and it changes when somebody renames themselves.
-        const at = segments.indexOf('users')
-        value = (at >= 0 ? segments[at + 1] : last) ?? ''
-      } else if (provider === 'mastodon' && last.startsWith('@')) {
+      if (provider === 'mastodon' && last.startsWith('@')) {
         // A Mastodon profile is https://server/@user, and the server is the
         // half that says which Mastodon this is — it cannot be dropped.
         value = `${last.slice(1)}@${url.hostname}`
@@ -290,124 +285,6 @@ async function lookupGitlab(account: string): Promise<LookupOutcome> {
   }
 }
 
-/** Codeberg (Forgejo): `GET /api/v1/users/:login`, 404 for no such user. */
-async function lookupCodeberg(account: string): Promise<LookupOutcome> {
-  if (!/^[a-z\d][a-z\d._-]{0,39}$/i.test(account)) return { status: 'missing' }
-
-  const result = await readJson(`https://codeberg.org/api/v1/users/${encodeURIComponent(account)}`)
-  if (!result.ok) {
-    return result.status === 404 ? { status: 'missing' } : { status: 'unknown', reason: result.reason }
-  }
-
-  const user = result.body as {
-    id?: number
-    login?: string
-    full_name?: string
-    avatar_url?: string
-    html_url?: string
-    created?: string
-  }
-  // Nothing is read off `active`, tempting as it looks: Forgejo only fills it
-  // in for an authenticated admin and returns `false` to everyone else, so
-  // trusting it here would report every real account as missing. The 404 above
-  // is the only thing that says an account is not there.
-  if (!user?.id || !user.login) return { status: 'missing' }
-
-  return {
-    status: 'found',
-    identity: {
-      provider: 'codeberg',
-      confirmation: 'existence',
-      subject: String(user.id),
-      name: user.full_name || user.login,
-      handle: user.login,
-      profileUrl: user.html_url || `https://codeberg.org/${encodeURIComponent(user.login)}`,
-      avatarUrl: user.avatar_url,
-      accountCreatedAt: user.created
-    }
-  }
-}
-
-/**
- * The five entities the Stack Exchange API escapes display names with.
- *
- * Left encoded, a name like `Ben & Jerry` reaches the board as `Ben &amp;
- * Jerry` — Vue escapes on render, so the entity is shown rather than resolved.
- * Only these five, and no general HTML decoding: this is somebody's name on a
- * public page, not markup to be interpreted.
- */
-function decodeEntities(value: string): string {
-  return value
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#(?:39|x27);/g, '\'')
-    .replace(/&amp;/g, '&')
-}
-
-/**
- * Stack Overflow: by numeric id, because a display name is not an account.
- *
- * Two people may hold the same display name there, so `/users?inname=` is a
- * search rather than a lookup and could only ever guess which of its results
- * the reader meant. The id in the profile URL is the account, `normalizeAccount`
- * digs it out of a pasted link, and a name typed on its own is refused here
- * rather than resolved to somebody who might be a stranger.
- */
-async function lookupStackoverflow(account: string): Promise<LookupOutcome> {
-  if (!/^\d{1,12}$/.test(account)) return { status: 'missing' }
-
-  // No API key. The Stack Exchange API allows unauthenticated reads at 300 a
-  // day per IP, which is far above what this form generates; a key raises it if
-  // that ever stops being true.
-  //
-  // The default filter is asked for even though it returns about 15KB of badge
-  // counts and vote tallies we throw away. Trimming it means hard-coding one of
-  // their opaque generated filter ids — an unreadable string nobody here could
-  // check or regenerate — and that is a worse thing to leave in the file than a
-  // fat response on a request that happens once per posting.
-  const result = await readJson(
-    `https://api.stackexchange.com/2.3/users/${encodeURIComponent(account)}?site=stackoverflow`
-  )
-  if (!result.ok) {
-    return result.status === 400 || result.status === 404
-      ? { status: 'missing' }
-      : { status: 'unknown', reason: result.reason }
-  }
-
-  const [user] = ((result.body as {
-    items?: {
-      user_id?: number
-      display_name?: string
-      profile_image?: string
-      link?: string
-      creation_date?: number
-      user_type?: string
-    }[]
-  })?.items ?? [])
-  // As with GitLab, an unknown id is a 200 with nothing in it.
-  if (!user?.user_id || !user.display_name) return { status: 'missing' }
-  if (user.user_type === 'does_not_exist') return { status: 'missing' }
-
-  return {
-    status: 'found',
-    identity: {
-      provider: 'stackoverflow',
-      confirmation: 'existence',
-      subject: String(user.user_id),
-      name: decodeEntities(user.display_name),
-      // No handle: the id is the account and the display name is not unique, so
-      // there is nothing here that reads as an `@handle` without misleading.
-      profileUrl: user.link || `https://stackoverflow.com/users/${encodeURIComponent(account)}`,
-      avatarUrl: user.profile_image,
-      // Unix seconds, unlike every other provider's ISO string.
-      accountCreatedAt: user.creation_date
-        ? new Date(user.creation_date * 1000).toISOString()
-        : undefined
-    }
-  }
-}
-
 /**
  * Find the account the reader named, on the provider they named it at.
  *
@@ -426,8 +303,6 @@ export async function lookupAccount(provider: string, raw: string): Promise<Look
     case 'bluesky': return lookupBluesky(account)
     case 'mastodon': return lookupMastodon(account)
     case 'gitlab': return lookupGitlab(account)
-    case 'codeberg': return lookupCodeberg(account)
-    case 'stackoverflow': return lookupStackoverflow(account)
     default: return { status: 'unsupported' }
   }
 }

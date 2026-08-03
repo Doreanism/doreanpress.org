@@ -14,7 +14,7 @@ apart.
 | Reader does | Round trip to the provider | Types a handle in a field | Types a handle in a field |
 | Provider says | "this is them" | nothing — we read a public page | nothing — we never ask |
 | Establishes | `control` — the account is theirs | `existence` — the account is real | `claimed` — **nothing** |
-| Providers | X, Facebook, LinkedIn, GitHub, Twitch, TikTok | GitHub, Bluesky, Mastodon, GitLab, Codeberg, Stack Overflow | X, Facebook, LinkedIn, Twitch, TikTok |
+| Providers | X, Facebook, LinkedIn, GitHub, Twitch, TikTok | GitHub, GitLab, Bluesky, Mastodon | X, Facebook, LinkedIn, Twitch, TikTok |
 | Stops impersonation | Yes | **No** | **No** |
 | Account might not exist | No | No | **Yes** |
 | Costs an abuser | A new social account per posting | Nothing — handles are free to type | Nothing — handles are free to type |
@@ -102,16 +102,23 @@ claimed accounts — don't write that.
 There are no accounts on this site. Completing the round trip to a provider
 leaves a short-lived **proof** in a sealed cookie. It lasts twenty minutes and
 covers whatever the reader does in that window — post a request, correct it, take
-it down — and then lapses. `discardProof` in `server/utils/identityProof.ts` ends
-one early, which is what "use a different account" does.
+it down — and then lapses. `discardProofs` in `server/utils/identityProof.ts`
+ends one early, which is what "Remove" on an attached profile does.
+
+The cookie holds a *set* of them, up to `MAX_ATTACHED`. A reader attaches the
+profiles they want a sponsor to look at, and more than one is often the honest
+answer: the Facebook account their friends know them by says nothing checkable,
+and the GitHub account beside it can be read. Checking a second account adds to
+what is held rather than replacing it — re-checking one already attached replaces
+just that entry, and burns the proof it replaces.
 
 That shape is deliberate:
 
 - Nothing to register, no password, no profile to maintain, nothing to delete.
 - No persistent identity in the header, and no sign-out, because there is no
   session to end.
-- A stolen or stale cookie is worth little: it acts as one account, for twenty
-  minutes, and only on that account's own posting.
+- A stolen or stale cookie is worth little: it acts as the accounts it holds,
+  for twenty minutes, and only on their own posting.
 
 It used to be spent the instant its first action landed. That read well in the
 abstract and badly in the hand: a reader who posted a request and then wanted it
@@ -122,8 +129,9 @@ lapses.
 
 `nuxt-auth-utils` supplies the OAuth dance and the sealed cookie. Its *account*
 model is not used: nothing is ever stored under `session.user`, so
-`useUserSession().loggedIn` is always false by design. Read the proof through
-`useIdentityProof()` on the client and `readProof` / `requireProof` on the server.
+`useUserSession().loggedIn` is always false by design. Read what is held through
+`useIdentityProof()` on the client and `readProofs` / `requireProofs` /
+`requireIdentities` on the server.
 
 ## What this does and doesn't claim
 
@@ -158,10 +166,10 @@ A named account is fetched the same way, at the provider named and nowhere else
 `POST /api/verify/lookup`. Three rules hold across all of them:
 
 - **Only "definitely not there" reads as not found**, and how a provider says it
-  varies. GitHub, Codeberg and Mastodon answer 404; Bluesky answers 400; GitLab
-  and Stack Overflow answer **200 with an empty list**, so for those the absence
-  is in the body and a status-code check alone would report every unknown handle
-  as found. A timeout, a 500 or a rate-limit is *unknown* and is reported as "we
+  varies. GitHub and Mastodon answer 404; Bluesky answers 400; GitLab answers
+  **200 with an empty list**, so there the absence is in the body and a
+  status-code check alone would report every unknown handle as found. A timeout, a
+  500 or a rate-limit is *unknown* and is reported as "we
   couldn't reach them", never as "you made that up". The distinction survives all
   the way to the reader's screen.
 - **The reader's text never lands in a URL unencoded**, no adapter follows a
@@ -171,31 +179,6 @@ A named account is fetched the same way, at the provider named and nowhere else
   domain and refuses bare hostnames, anything that parses as an IP address, and
   the usual internal suffixes — before any request leaves the process. That
   guard has its own tests in `test/accountLookup.test.ts`.
-
-Two adapters carry a quirk worth knowing before editing them:
-
-- **Codeberg's `active` field must not be read.** Forgejo fills it in only for an
-  authenticated admin and returns `false` to everyone else, so treating it as
-  "account disabled" reports every real Codeberg account as missing. The 404 is
-  the only thing there that says an account is not there.
-- **Stack Overflow is looked up by numeric id, not by name.** Its display names
-  are not unique — two people may hold the same one — so a name is not an
-  account, and `inname` search could only guess which result the reader meant.
-  `normalizeAccount` digs the id out of a pasted `/users/<id>/<slug>` link, and a
-  bare name is refused rather than resolved to a possible stranger.
-
-### Why not every provider can be looked up
-
-X, Facebook, LinkedIn, Twitch and TikTok are absent from `LOOKUP_PROVIDERS` and
-cannot be added. Facebook removed username lookup from the Graph API; LinkedIn
-has no public profile API; X's `/2/users/by/username` needs a paid bearer token;
-Twitch's Helix and TikTok's display API both require an app token. What is left
-is reading their HTML, which is scraping — against their terms, blocked from
-server IPs, and broken by the next markup change. If one of them ever has to be
-offered this way it needs credentials and a real client, not a page fetch. A
-test pins them out of the list so this cannot be undone by accident.
-
-## What a sponsor sees
 
 | Provider | Route | Name | Photo | Public link | Age | Provider's own badge |
 |---|---|---|---|---|---|---|
@@ -208,8 +191,6 @@ test pins them out of the list so this cannot be undone by accident.
 | Bluesky | name it | ✓ | ✓ | ✓ `bsky.app/profile/<handle>` | ✓ | — |
 | Mastodon | name it | ✓ | ✓ | ✓ `<server>/@<user>` | ✓ | — |
 | GitLab | name it | ✓ | ✓ | ✓ `gitlab.com/<username>` | — | — |
-| Codeberg | name it | ✓ | ✓ | ✓ `codeberg.org/<login>` | ✓ | — |
-| Stack Overflow | name it | ✓ | ✓ | ✓ `stackoverflow.com/users/<id>` | ✓ | — |
 
 Among the sign-in providers, X, Twitch and GitHub hand us a profile a sponsor can
 open. Facebook's `user_link` permission and LinkedIn's vanity name both sit behind
@@ -271,11 +252,16 @@ to avoid making for us.
 
 ## Rules this buys
 
-- **A proof is required to post.** `POST /api/requests` rejects a caller without
-  one. The proof survives the posting, so correcting or withdrawing it needs no
-  second trip to the provider.
-- **One open order per doorstep.** Enforced on `account_key` plus
-  `destinationKey`. A reader already on the board who asks for another book is
+- **At least one attached account is required to post.** `POST /api/requests`
+  rejects a caller with none. What is attached survives the posting, so
+  correcting or withdrawing needs no second trip to the provider. A request
+  stores every attached account (`requesters`), and the board draws every one of
+  them with its own verdict — showing only the best-checked would let it vouch
+  silently for the rest.
+- **One open order per doorstep.** Enforced on the attached accounts plus
+  `destinationKey`, and *any* of them matching an open order counts
+  (`listOpenRequestsForAccounts`) — otherwise detaching a profile would buy a
+  second posting. A reader already on the board who asks for another book is
   not posting a second time: the copies are added to the order waiting at that
   address and the message is kept under the old one, so it stays one card, one
   list and one sponsor button. An order to a *different* address is refused with
@@ -284,14 +270,16 @@ to avoid making for us.
   from the old one-request-per-account rule are folded on the first write
   (`ensureSchema`); an in-flight checkout still points at the surviving id,
   because the earliest row is the one kept.
-- **One open order per address, for a named account.** The rule above is worth
-  what the account behind it cost, and a named one cost nothing. So a request
-  from an `existence` identity is also refused if *any* open order is already
-  going to that address, whoever posted it
+- **One open order per address, where nothing was signed into.** The rule above
+  is worth what the accounts behind it cost, and a named one cost nothing. So a
+  request with no `control` account among those attached (`hasControl`) is also
+  refused if *any* open order is already going to that address, whoever posted it
   (`listOpenRequestsAtDestination`). Signing in lifts that restriction, which is
   the honest way for two people who really do share an address.
-- **Only the posting account may edit or withdraw.** `PATCH`/`DELETE` compare the
-  proof in hand against the identity stored on the request. Rows posted before the
+- **Only a posting account may edit or withdraw.** `PATCH`/`DELETE` compare what
+  is in hand against the accounts stored on the request, and any one in common is
+  enough (`sharesAccount`) — a reader who attached three profiles and comes back
+  holding one of them is the person who posted it. Rows posted before the
   challenge existed have no account to compare, so for those the unguessable id
   in the confirmation email stays the key — no weaker than the day they were
   posted, and it doesn't strand anyone.
@@ -318,7 +306,7 @@ gets a one-click removal on the card; everyone else follows that link to
 ## Setting up the providers
 
 The lookup providers need no setup at all — public read-only APIs, no key, no app
-registration — so Bluesky, Mastodon, GitLab, Codeberg and Stack Overflow work out
+registration — so GitHub, GitLab, Bluesky and Mastodon work out
 of the box, in dev and in production alike. GitHub does too, right up until you
 configure it below, at which point it becomes a sign-in provider instead.
 
@@ -384,8 +372,8 @@ queue — and it gives sponsors a profile to open, so it is the one to start wit
 the callback URL for a dev app is `http://localhost:3000/verify/github`.
 
 The *lookup* path needs none of that and is the one to reach for when you just
-want to walk the request flow: name any real Bluesky, Mastodon, GitLab, Codeberg
-or Stack Overflow account and the form unlocks. That is a convenience of it being
+want to walk the request flow: name any real GitHub, GitLab, Bluesky or Mastodon
+account and the form unlocks. That is a convenience of it being
 genuinely public, not a stand-in — the account really is fetched, and a handle
 that does not exist is refused exactly as it would be in production.
 
@@ -409,9 +397,10 @@ Testing both routes locally means toggling `NUXT_OAUTH_GITHUB_CLIENT_ID`.
   pin the static shape of the two lists, not the rule itself.
 - **No adapter is exercised against the provider it talks to.** The lookup tests
   deliberately never touch the network, which keeps them fast and honest but
-  means a provider changing a field name breaks the badge silently. Codeberg's
-  `active` field — filled in only for admins, `false` for everyone else, and so a
-  trap that would have reported every real account as missing — was caught by
+  means a provider changing a field name breaks the badge silently. The traps
+  here are real — a since-removed Codeberg adapter read an `active` field that
+  Forgejo fills in only for admins and returns `false` to everyone else, which
+  would have reported every real account as missing — and that one was caught by
   hand, not by a test. A contract test run on a schedule rather than in CI is
   probably the shape of the fix.
 - **Request ids are public, and withdrawal leans on them.** The board renders

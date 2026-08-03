@@ -9,7 +9,7 @@
 // Persistence: Netlify DB (Neon Postgres) — see `server/utils/db.ts`.
 
 import { mergeItems, subtractItems, type RequestItem } from '#shared/catalog'
-import { accountKey, type RequesterIdentity } from '#shared/identity'
+import { accountKey, primaryIdentity, type RequesterIdentity } from '#shared/identity'
 
 export type RequestStatus = 'open' | 'fulfilled'
 
@@ -32,11 +32,15 @@ export interface BookRequest {
   /** Public message shown on the board. */
   message: string
   /**
-   * The public account the reader proved, shown on the board so a
-   * sponsor can see who they are giving to. Null only on rows posted before
-   * verification was required — those stay visible, marked unverified.
+   * The public accounts the reader attached, shown on the board so a sponsor can
+   * see who they are giving to. Empty only on rows posted before any of this was
+   * required — those stay visible, marked unverified.
+   *
+   * Ordered as the reader attached them; the board sorts by strength for
+   * display. Every one of them is shown: see `primaryIdentity` for why the
+   * strongest is never drawn alone.
    */
-  requester: RequesterIdentity | null
+  requesters: RequesterIdentity[]
   // ── private contact + shipping (never exposed publicly) ──
   name: string
   email: string
@@ -55,15 +59,15 @@ export interface BookRequest {
 /**
  * The only fields safe to send to the browser.
  *
- * `requester` is public on purpose — it is the account the reader chose to
- * stand behind the request with. It is not the same as `name`, the shipping
+ * `requesters` is public on purpose — these are the accounts the reader chose to
+ * stand behind the request with. They are not the same as `name`, the shipping
  * name, which stays private along with the rest of the address.
  */
 export interface PublicBookRequest {
   id: string
   items: RequestItem[]
   message: string
-  requester: RequesterIdentity | null
+  requesters: RequesterIdentity[]
   createdAt: string
 }
 
@@ -72,7 +76,7 @@ export function toPublic(r: BookRequest): PublicBookRequest {
     id: r.id,
     items: r.items,
     message: r.message,
-    requester: r.requester,
+    requesters: r.requesters,
     createdAt: r.createdAt
   }
 }
@@ -110,9 +114,17 @@ export function destinationKey(r: Pick<BookRequest, 'name' | 'address'>): string
   ].join('|')
 }
 
-/** Where an account's open order lives: one order per doorstep. */
+/**
+ * Where an account's open order lives: one order per doorstep.
+ *
+ * Keyed on the primary account rather than the whole set, because the set can
+ * change between postings — a reader who attached two profiles and later
+ * attaches only one is the same person at the same door, and two keys that
+ * disagreed would fold nothing.
+ */
 export function orderKey(r: BookRequest): string | null {
-  return r.requester ? `${accountKey(r.requester)}@${destinationKey(r)}` : null
+  const primary = primaryIdentity(r.requesters)
+  return primary ? `${accountKey(primary)}@${destinationKey(r)}` : null
 }
 
 /** As much of a message as one card should ever have to carry. */
@@ -148,7 +160,7 @@ export function foldOrders(
 export interface CreateRequestInput {
   items: RequestItem[]
   message: string
-  requester: RequesterIdentity
+  requesters: RequesterIdentity[]
   name: string
   email: string
   phone: string
@@ -211,14 +223,20 @@ function ensureSchema() {
         END $$
       `
 
-      // Verified identity, added later. Both columns are nullable: rows posted
-      // before it was required keep no account and show as unverified rather
-      // than being deleted or silently attributed to someone.
+      // Verified identity, added later. All three columns are nullable: rows
+      // posted before it was required keep no account and show as unverified
+      // rather than being deleted or silently attributed to someone.
       await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS requester jsonb`
       await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS account_key text`
-      // `account_key` is derived from `requester` on every write; it exists as
-      // its own column purely so "does this account already have a request
-      // open?" is an index lookup rather than a scan over jsonb.
+      // A request carries a *set* of accounts. `requester` is kept beside the
+      // set and holds the primary one, so a row written now still reads
+      // correctly to anything that only knows about the single-account shape —
+      // and so rows written before this column existed need no backfill: see
+      // `requestersFrom`, which falls back to it.
+      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS requesters jsonb`
+      // `account_key` is derived from the primary account on every write; it
+      // exists as its own column purely so "does this account already have a
+      // request open?" is an index lookup rather than a scan over jsonb.
       await sql`
         CREATE INDEX IF NOT EXISTS book_requests_account_open_idx
           ON book_requests (account_key, status)
@@ -261,7 +279,7 @@ function ensureSchema() {
 }
 
 /**
- * The identity on a stored row, or null.
+ * One identity off a stored row, or null.
  *
  * Rows written before lookups existed carry no `confirmation`, and every one of
  * them came back from an OAuth challenge — so `control` is the correct reading,
@@ -275,12 +293,37 @@ function requesterFrom(value: unknown): RequesterIdentity | null {
   return { ...identity, confirmation: identity.confirmation ?? 'control' }
 }
 
+/**
+ * Every identity on a stored row.
+ *
+ * Reads the set where there is one and falls back to the single `requester`
+ * where there is not, which is what lets rows written before a request could
+ * carry more than one account keep working untouched. A row with neither yields
+ * an empty list — unverified, and drawn as such.
+ */
+function requestersFrom(r: Record<string, unknown>): RequesterIdentity[] {
+  const many = Array.isArray(r.requesters) ? r.requesters : null
+  const identities = (many ?? [r.requester])
+    .map(requesterFrom)
+    .filter((i): i is RequesterIdentity => i !== null)
+
+  // Two rows could name the same account twice if a set were ever written badly;
+  // deduping here keeps the board from drawing one person twice.
+  const seen = new Set<string>()
+  return identities.filter((i) => {
+    const key = accountKey(i)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 function fromRow(r: Record<string, unknown>): BookRequest {
   return {
     id: r.id as string,
     items: (r.items as RequestItem[]) ?? [],
     message: r.message as string,
-    requester: requesterFrom(r.requester),
+    requesters: requestersFrom(r),
     name: r.name as string,
     email: r.email as string,
     phone: r.phone as string,
@@ -298,14 +341,18 @@ function fromRow(r: Record<string, unknown>): BookRequest {
 // Full-row upsert, so create and update share one write path.
 async function upsert(r: BookRequest) {
   await ensureSchema()
+  // The primary is written to `requester` as well as the set, so the indexed key
+  // and the single-account shape stay in step with each other.
+  const primary = primaryIdentity(r.requesters)
   await db()`
     INSERT INTO book_requests
-      (id, items, message, requester, account_key, name, email, phone, address, status, created_at,
+      (id, items, message, requester, requesters, account_key, name, email, phone, address, status, created_at,
        sponsor_email, stripe_session_id, lulu_job_id, shipping_status, fulfilled_at)
     VALUES
       (${r.id}, ${JSON.stringify(r.items)}::jsonb, ${r.message},
-       ${r.requester ? JSON.stringify(r.requester) : null}::jsonb,
-       ${r.requester ? accountKey(r.requester) : null},
+       ${primary ? JSON.stringify(primary) : null}::jsonb,
+       ${r.requesters.length ? JSON.stringify(r.requesters) : null}::jsonb,
+       ${primary ? accountKey(primary) : null},
        ${r.name}, ${r.email}, ${r.phone},
        ${JSON.stringify(r.address)}::jsonb, ${r.status}, ${r.createdAt},
        ${r.sponsorEmail ?? null}, ${r.stripeSessionId ?? null},
@@ -315,6 +362,7 @@ async function upsert(r: BookRequest) {
       items = EXCLUDED.items,
       message = EXCLUDED.message,
       requester = EXCLUDED.requester,
+      requesters = EXCLUDED.requesters,
       account_key = EXCLUDED.account_key,
       name = EXCLUDED.name,
       email = EXCLUDED.email,
@@ -356,7 +404,7 @@ export async function listOpenRequests(): Promise<BookRequest[]> {
 }
 
 /**
- * Everything this account already has waiting on the board.
+ * Everything these accounts already have waiting on the board.
  *
  * One open *destination* per account is what the challenge buys us: a scammer
  * can no longer paper the board with postings, because every extra doorstep
@@ -365,15 +413,23 @@ export async function listOpenRequests(): Promise<BookRequest[]> {
  * joins the order already there (`foldOrders`) instead of becoming a row of its
  * own. The caller compares destinations; this only fetches. Open orders only, so
  * a reader whose books have been sponsored starts again with a clean slate.
+ *
+ * Any account matching is a match, and it has to be: a reader who posted with
+ * two profiles attached and comes back having dropped one is the same person,
+ * and a rule that only recognised the primary would hand them a second posting
+ * for the price of detaching an account. So the match runs over the whole stored
+ * set rather than the indexed `account_key`, which means filtering the open
+ * board in memory — the same trade `listOpenRequestsAtDestination` makes below,
+ * for the same reason: the open board is small, and it is what the whole Give a
+ * Book page renders anyway.
  */
-export async function listOpenRequestsByAccount(key: string): Promise<BookRequest[]> {
-  await ensureSchema()
-  const rows = await db()`
-    SELECT * FROM book_requests
-     WHERE account_key = ${key} AND status = 'open'
-     ORDER BY created_at ASC
-  `
-  return rows.map(fromRow)
+export async function listOpenRequestsForAccounts(keys: string[]): Promise<BookRequest[]> {
+  if (keys.length === 0) return []
+  const wanted = new Set(keys)
+  const open = await listOpenRequests()
+  return open
+    .filter(r => r.requesters.some(i => wanted.has(accountKey(i))))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 }
 
 /**

@@ -16,7 +16,7 @@
 
 export type IdentityProvider
   = | 'x' | 'facebook' | 'linkedin' | 'twitch' | 'tiktok'
-    | 'github' | 'bluesky' | 'mastodon' | 'gitlab' | 'codeberg' | 'stackoverflow'
+    | 'github' | 'gitlab' | 'bluesky' | 'mastodon'
 
 /**
  * What a completed check actually establishes. The single most important
@@ -86,12 +86,16 @@ export interface RequesterIdentity {
 }
 
 /**
- * A completed identity challenge.
+ * A completed identity challenge, for one account.
  *
  * Evidence that whoever holds it controlled `identity` at `verifiedAt` — and
  * nothing more. It is deliberately not a login: it is raised for one action,
  * stamped onto that action, and spent. There are no accounts on this site, no
  * signed-in state, and nothing to sign out of.
+ *
+ * A reader may hold several at once, one per account they have attached — see
+ * `MAX_ATTACHED`. They accumulate rather than replacing each other, and each
+ * carries its own `id` so it can be ended on its own.
  */
 export interface IdentityProof {
   /**
@@ -109,6 +113,77 @@ export interface IdentityProof {
    * prefill the reader's own form.
    */
   email?: string
+}
+
+/**
+ * How many accounts one request may carry.
+ *
+ * A reader attaches the profiles they want a sponsor to look at, and more than
+ * one is often the honest answer: the Facebook account their friends know them
+ * by says nothing checkable, and the GitHub account beside it can be read. Shown
+ * together they are worth more than either alone.
+ *
+ * Bounded for two reasons. The proofs ride in a sealed cookie, which browsers
+ * cap at 4KB and which each account costs a few hundred bytes of; and a card on
+ * the board with a dozen logos on it stops being evidence and starts being
+ * noise, which is the opposite of what the badge is for.
+ */
+export const MAX_ATTACHED = 4
+
+/** Strongest first, for sorting and for picking the one that speaks for a set. */
+const CONFIRMATION_RANK: Record<Confirmation, number> = {
+  control: 0,
+  existence: 1,
+  claimed: 2
+}
+
+/**
+ * The account that speaks for a set: the best-checked one, else the first.
+ *
+ * Used wherever exactly one has to be named — the row's indexed `account_key`,
+ * the subject line of a notification. Never used to decide what a sponsor is
+ * shown, which is always all of them: picking the strongest and drawing only
+ * that would let a proved account quietly vouch for a claimed one sitting
+ * invisibly behind it.
+ */
+export function primaryIdentity<T extends Pick<RequesterIdentity, 'confirmation'>>(
+  identities: readonly T[] | null | undefined
+): T | null {
+  if (!identities?.length) return null
+  return [...identities].sort(
+    (a, b) => CONFIRMATION_RANK[a.confirmation] - CONFIRMATION_RANK[b.confirmation]
+  )[0] ?? null
+}
+
+/** Strongest first, so a card reads down from the best evidence it has. */
+export function byStrength<T extends Pick<RequesterIdentity, 'confirmation'>>(
+  identities: readonly T[]
+): T[] {
+  return [...identities].sort(
+    (a, b) => CONFIRMATION_RANK[a.confirmation] - CONFIRMATION_RANK[b.confirmation]
+  )
+}
+
+/**
+ * Whether any account here was actually signed into.
+ *
+ * The test the scarcity rules ask, and it is deliberately *any* rather than
+ * *all*: those rules exist because a proved account costs something to come by,
+ * and one is enough to have been paid for. A reader who signs in with GitHub and
+ * also names their Facebook has not made the GitHub account any cheaper.
+ */
+export function hasControl(identities: readonly Pick<RequesterIdentity, 'confirmation'>[]): boolean {
+  return identities.some(i => i.confirmation === 'control')
+}
+
+/** Whether the two sets name any account in common. */
+export function sharesAccount(
+  a: readonly Pick<RequesterIdentity, 'provider' | 'subject'>[] | null | undefined,
+  b: readonly Pick<RequesterIdentity, 'provider' | 'subject'>[] | null | undefined
+): boolean {
+  if (!a?.length || !b?.length) return false
+  const keys = new Set(a.map(accountKey))
+  return b.some(i => keys.has(accountKey(i)))
 }
 
 export interface ProviderMeta {
@@ -194,6 +269,14 @@ export const IDENTITY_PROVIDERS: Record<IdentityProvider, ProviderMeta> = {
     accountHint: 'username',
     accountExample: 'torvalds'
   },
+  gitlab: {
+    label: 'GitLab',
+    icon: 'i-simple-icons-gitlab',
+    linkable: true,
+    confirms: 'existence',
+    accountHint: 'username',
+    accountExample: 'alice'
+  },
   bluesky: {
     label: 'Bluesky',
     icon: 'i-simple-icons-bluesky',
@@ -209,34 +292,6 @@ export const IDENTITY_PROVIDERS: Record<IdentityProvider, ProviderMeta> = {
     confirms: 'existence',
     accountHint: 'full address, including the server',
     accountExample: 'alice@mastodon.social'
-  },
-  gitlab: {
-    label: 'GitLab',
-    icon: 'i-simple-icons-gitlab',
-    linkable: true,
-    confirms: 'existence',
-    accountHint: 'username',
-    accountExample: 'alice'
-  },
-  codeberg: {
-    label: 'Codeberg',
-    icon: 'i-simple-icons-codeberg',
-    linkable: true,
-    confirms: 'existence',
-    accountHint: 'username',
-    accountExample: 'alice'
-  },
-  stackoverflow: {
-    label: 'Stack Overflow',
-    icon: 'i-simple-icons-stackoverflow',
-    linkable: true,
-    confirms: 'existence',
-    // The odd one out, and it has to be: Stack Overflow display names are not
-    // unique — two people can hold the same one — so a name is not an account
-    // there. The numeric id in the profile URL is, and asking for the link is
-    // kinder than asking somebody to dig the number out of it themselves.
-    accountHint: 'profile link, or the number in it',
-    accountExample: 'https://stackoverflow.com/users/22656'
   }
 }
 
@@ -260,22 +315,34 @@ export const CHALLENGE_PROVIDERS: ChallengeProvider[] = [
 /**
  * Providers whose accounts a reader can simply *name*, for us to go and read.
  *
- * Each is here because it actually allows it: a public profile over a
- * documented, unauthenticated API that answers "no such account"
- * distinguishably. That is the whole bar, and it is what keeps X, Facebook and
- * LinkedIn out — Facebook removed username lookup from the Graph API, LinkedIn
- * has no public profile API at all, and X's requires a paid bearer token.
- * Reading their HTML instead would be scraping: against their terms, blocked
- * from server IPs, and broken by the next markup change. If one of them ever
- * needs to be offered this way, it needs credentials and a real client, not a
- * page fetch.
+ * Two conditions, and a provider needs both. First, it must actually allow it:
+ * a public profile over a documented, unauthenticated API that answers "no such
+ * account" distinguishably. That is what keeps X, Facebook and LinkedIn out —
+ * Facebook removed username lookup from the Graph API, LinkedIn has no public
+ * profile API at all, and X's requires a paid bearer token. Reading their HTML
+ * instead would be scraping: against their terms, blocked from server IPs, and
+ * broken by the next markup change. If one of them ever needs to be offered this
+ * way, it needs credentials and a real client, not a page fetch.
+ *
+ * Second, and it is the condition that is easy to forget: somebody asking for a
+ * free book has to plausibly be on it. Codeberg and Stack Overflow both met the
+ * first test and were offered for a while on the strength of it, which was
+ * letting the ease of checking decide what to ask for — a Codeberg account is a
+ * thing almost nobody outside a narrow world has, and a Stack Overflow one is
+ * asked for as a number out of a URL. Being checkable is not a reason to be on
+ * this list.
+ *
+ * The two code forges that remain are here because between them they cover
+ * essentially everyone who writes software, and where a reader has one it is
+ * usually the account of theirs with the longest visible history — which is
+ * exactly what this rung is worth showing a sponsor.
  */
 export type LookupProvider = Extract<
-  IdentityProvider, 'github' | 'bluesky' | 'mastodon' | 'gitlab' | 'codeberg' | 'stackoverflow'
+  IdentityProvider, 'github' | 'gitlab' | 'bluesky' | 'mastodon'
 >
 
 export const LOOKUP_PROVIDERS: LookupProvider[] = [
-  'github', 'bluesky', 'mastodon', 'gitlab', 'codeberg', 'stackoverflow'
+  'github', 'gitlab', 'bluesky', 'mastodon'
 ]
 
 /**

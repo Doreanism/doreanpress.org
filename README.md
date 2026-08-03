@@ -34,9 +34,8 @@ See `.env.example`. With no keys, **Lulu runs in mock mode** (no real print
 orders) and Stripe is disabled. To go live, set the `NUXT_*` variables.
 
 Free-book requests need a public account behind them, by one of two routes, and
-neither has a mock mode. **Naming an account** (GitHub, Bluesky, Mastodon,
-GitLab, Codeberg, Stack Overflow) needs no credentials at all — public read-only
-APIs — so the request flow works out of the box. **Signing in** (X, Facebook,
+neither has a mock mode. **Naming an account** (GitHub, GitLab,
+Bluesky, Mastodon) needs no credentials at all — public read-only APIs — so the request flow works out of the box. **Signing in** (X, Facebook,
 LinkedIn, GitHub, Twitch, TikTok) is the stronger check and needs real OAuth
 credentials; GitHub is the cheapest to register. The two are not equivalent and
 the site says which one happened — see

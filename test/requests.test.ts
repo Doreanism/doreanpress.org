@@ -26,7 +26,7 @@ function request(over: Partial<BookRequest> = {}): BookRequest {
     id: `req-${seq}`,
     items: [{ slug: A, quantity: 1 }],
     message: 'Please, if you can.',
-    requester: account('ada'),
+    requesters: [account('ada')],
     name: 'Ada Lovelace',
     email: 'ada@example.com',
     phone: '555',
@@ -71,11 +71,21 @@ describe('orderKey', () => {
   })
 
   it('separates two accounts at one address', () => {
-    expect(orderKey(request())).not.toBe(orderKey(request({ requester: account('grace') })))
+    expect(orderKey(request())).not.toBe(orderKey(request({ requesters: [account('grace')] })))
   })
 
   it('is null without an account, so unverified rows are never folded together', () => {
-    expect(orderKey(request({ requester: null }))).toBeNull()
+    expect(orderKey(request({ requesters: [] }))).toBeNull()
+  })
+
+  // A reader who attached two profiles and comes back with one of them detached
+  // is the same person at the same door. Keying on the best-checked account is
+  // what keeps the second ask folding into the order already there.
+  it('follows the strongest account, whatever else is attached alongside it', () => {
+    const proved = account('ada')
+    const alsoTold = { ...account('ada-fb'), provider: 'facebook' as const, confirmation: 'claimed' as const }
+    expect(orderKey(request({ requesters: [proved, alsoTold] })))
+      .toBe(orderKey(request({ requesters: [proved] })))
   })
 })
 

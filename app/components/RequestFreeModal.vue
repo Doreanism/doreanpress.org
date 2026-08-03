@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { findBook, summarizeTitles, type RequestItem } from '#shared/catalog'
-import { isControlConfirmed, providerLabel } from '#shared/identity'
+import { accountKey, byStrength, MAX_ATTACHED, providerLabel, type RequesterIdentity } from '#shared/identity'
 
 // The whole set of items is posted as ONE request — an order a sponsor funds in
 // full — rather than a separate posting per title.
@@ -27,13 +27,16 @@ const router = useRouter()
 // first thing the form asks for — see the template. The rest of the form stays
 // visible underneath, because a reader deciding whether to bother should be able
 // to see everything being asked of them, not just the gate.
-const { proof, identity, verified, refresh: refreshProof } = useIdentityProof()
+const { identities, email: providerEmail, verified, refresh: refreshProof } = useIdentityProof()
 
-/** Whether the account in hand was signed into, or merely named and found. */
-const proved = computed(() => isControlConfirmed(identity.value))
+/** Attached accounts, best-checked first, as the board will draw them. */
+const attached = computed(() => byStrength(identities.value))
 
-/** Weaker still: named at a provider we cannot check, and so not checked. */
-const told = computed(() => identity.value?.confirmation === 'claimed')
+/** Room for another, or the picker stands down and says why. */
+const canAttachMore = computed(() => identities.value.length < MAX_ATTACHED)
+
+const proved = (identity: RequesterIdentity) => identity.confirmation === 'control'
+const told = (identity: RequesterIdentity) => identity.confirmation === 'claimed'
 
 // The challenge means leaving the site, so the modal can't survive the round
 // trip on its own. It asks the provider to come back to this page with a marker
@@ -148,34 +151,37 @@ onMounted(() => {
   router.replace({ query })
 })
 
-// The provider already told us a name, and usually an email, so those fields
-// start filled — and refill when the account changes, unless the reader has
-// edited them since (see `prefilled`).
-watch([() => open.value, proof], ([isOpen, held]) => {
-  if (!isOpen || !held) return
-  if (!form.name || form.name === prefilled.name) {
-    form.name = held.identity.name
+// A provider already told us a name, and sometimes an email, so those fields
+// start filled — and refill as accounts come and go, unless the reader has
+// edited them since (see `prefilled`). The best-checked account supplies the
+// name, because that is the one whose name is most likely to be their real one.
+watch([() => open.value, attached, providerEmail], ([isOpen]) => {
+  if (!isOpen) return
+  const best = attached.value[0]
+  if (best && (!form.name || form.name === prefilled.name)) {
+    form.name = best.name
     prefilled.name = form.name
   }
-  if (held.email && (!form.email || form.email === prefilled.email)) {
-    form.email = held.email
+  if (providerEmail.value && (!form.email || form.email === prefilled.email)) {
+    form.email = providerEmail.value
     prefilled.email = form.email
   }
 }, { immediate: true })
 
-// Discard the proof so the challenge comes back and another account can be
-// picked. The draft is untouched — only the account changes.
-const switching = ref(false)
+// Detach one account, leaving the others. The draft is untouched — only what is
+// attached changes.
+const detaching = ref<string | null>(null)
 
-async function useDifferentAccount() {
-  switching.value = true
+async function detach(identity: RequesterIdentity) {
+  const key = accountKey(identity)
+  detaching.value = key
   try {
-    await $fetch('/api/verify/discard', { method: 'POST' })
+    await $fetch('/api/verify/discard', { method: 'POST', body: { account: key } })
   } catch {
     // Even if the call fails, re-reading below tells us where we actually stand.
   } finally {
     await refreshProof()
-    switching.value = false
+    detaching.value = null
   }
 }
 
@@ -232,7 +238,7 @@ async function submit() {
   <UModal
     v-model:open="open"
     :title="items.length > 1 ? 'Request these books' : 'Request a free copy'"
-    :description="`Tell us why you’d like ${summary}. Your public account and your message appear on the Give a Book board so a sponsor can see who they're covering; your contact details and address stay private.`"
+    :description="`Tell us why you’d like ${summary}. The profiles you attach and your message appear on the Give a Book board so a sponsor can see who they're covering; your contact details and address stay private.`"
     :ui="{ content: 'max-w-xl' }"
   >
     <UButton
@@ -256,10 +262,16 @@ async function submit() {
           visible below it either way — a reader should be able to see what is
           being asked before deciding to hand over an account.
         -->
-        <USeparator label="Your public account" />
+        <USeparator label="Your public accounts" />
 
+        <!--
+          Every account attached, each saying what the board will say about it,
+          in the same words — so posting holds no surprise about how the request
+          will read to a sponsor. Strongest first, as the board draws them.
+        -->
         <div
-          v-if="identity"
+          v-for="identity in attached"
+          :key="`${identity.provider}:${identity.subject}`"
           class="flex flex-wrap items-center gap-3 rounded-lg bg-elevated/50 p-3"
         >
           <UAvatar
@@ -271,28 +283,23 @@ async function submit() {
             <p class="flex items-center gap-1.5 text-sm font-medium text-highlighted">
               <span class="truncate">{{ identity.name }}</span>
               <UIcon
-                :name="told ? 'i-lucide-message-square-quote' : proved ? 'i-lucide-badge-check' : 'i-lucide-search-check'"
+                :name="told(identity) ? 'i-lucide-message-square-quote' : proved(identity) ? 'i-lucide-badge-check' : 'i-lucide-search-check'"
                 class="size-4 shrink-0"
-                :class="proved ? 'text-primary' : 'text-dimmed'"
+                :class="proved(identity) ? 'text-primary' : 'text-dimmed'"
               />
               <span class="truncate text-xs font-normal text-dimmed">
                 {{ identity.handle ? `@${identity.handle}` : providerLabel(identity.provider) }}
               </span>
             </p>
-            <!--
-              The reader is told here what the board will say about them, in the
-              same words, so posting holds no surprise about how their request
-              will read to a sponsor.
-            -->
             <p
-              v-if="proved"
+              v-if="proved(identity)"
               class="text-xs text-muted"
             >
               Verified, and shown on the board beside your message so sponsors know who
               they're giving to.
             </p>
             <p
-              v-else-if="told"
+              v-else-if="told(identity)"
               class="text-xs text-muted"
             >
               Shown on the board beside your message. Because we can't check this one at
@@ -309,20 +316,34 @@ async function submit() {
             </p>
           </div>
           <UButton
-            label="Use a different account"
-            icon="i-lucide-repeat-2"
+            label="Remove"
+            icon="i-lucide-x"
             color="neutral"
             variant="ghost"
             size="xs"
-            :loading="switching"
-            @click="useDifferentAccount"
+            :loading="detaching === `${identity.provider}:${identity.subject}`"
+            @click="detach(identity)"
           />
         </div>
 
+        <!--
+          The picker stays put once something is attached, because attaching a
+          second profile is the ordinary case rather than a correction: the
+          account a reader's friends know them by and the one that can actually
+          be checked are rarely the same account.
+        -->
         <IdentityChallenge
-          v-else
+          v-if="canAttachMore"
           :redirect="challengeRedirect"
+          :adding="attached.length > 0"
         />
+        <p
+          v-else
+          class="text-xs text-dimmed"
+        >
+          That's {{ MAX_ATTACHED }} profiles — as many as one request can carry. Remove one
+          to attach a different one.
+        </p>
 
         <USeparator label="Why you'd like them" />
 
@@ -443,8 +464,8 @@ async function submit() {
             v-if="!verified"
             class="mr-auto text-xs text-dimmed"
           >
-            Verify your account above to post this request. Anything you've typed is kept
-            while you do.
+            Attach at least one public profile above to post this request. Anything you've
+            typed is kept while you do.
           </p>
           <UButton
             label="Cancel"

@@ -5,19 +5,19 @@
 // Not a login. There is no account to create, no password, and nothing is
 // remembered afterwards — the copy below is careful not to imply otherwise.
 //
-// One picker, not three panels. A reader knows which social media they are on
-// long before they know which of our three checks it happens to support, so the
-// question asked first is theirs — "where can we find you?" — and the route
-// follows from the answer.
+// One row of logos, not three panels. A reader knows which social media they
+// are on long before they know which of our three checks it happens to support,
+// so the question asked first is theirs — "where can we find you?" — every
+// answer to it is on screen at once, and the route follows from the answer.
 //
 // What must survive that merge is the thing the three routes differ on. Signing
 // in proves the account is the reader's. Naming one for us to read only proves
-// it is there. Telling us about one proves nothing whatever. The list itself
-// stays out of that argument — it is ordered strongest first and otherwise just
-// names places — and the promise for the chosen provider is spelled out under
-// the field the moment one is picked, before anything is typed. It is never
-// left to be inferred from a missing tick, because a sponsor is about to spend
-// money on the difference.
+// it is there. Telling us about one proves nothing whatever. The row itself
+// stays out of that argument — it is ordered by how many people are on each
+// thing and otherwise just names places — and the promise for the chosen
+// provider is spelled out the moment one is picked, before anything is typed.
+// It is never left to be inferred from a missing tick, because a sponsor is
+// about to spend money on the difference.
 //
 // The provider lists come from the server rather than being hard-coded, so a
 // deployment that has only configured one of them never shows a button that
@@ -37,10 +37,16 @@ interface NamedOption extends ChallengeOption {
   accountExample: string
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   /** Where to land once the challenge passes. Defaults to the page we're on. */
   redirect?: string
-}>()
+  /**
+   * Whether something is already attached, which changes what this is asking.
+   * The long explanation of why an account is wanted at all has been read by
+   * then; repeating it above every extra profile would be nagging.
+   */
+  adding?: boolean
+}>(), { adding: false })
 
 const emit = defineEmits<{ confirmed: [RequesterIdentity] }>()
 
@@ -64,14 +70,10 @@ function challengeUrl(provider: IdentityProvider) {
 }
 
 // ── choosing a provider ──
-//
-// `undefined` rather than `null` for the empty case: `USelect` treats null as a
-// value to render rather than as nothing chosen.
 const chosen = ref<IdentityProvider | undefined>()
 const account = ref('')
 const busy = ref(false)
 const error = ref('')
-const result = ref<RequesterIdentity | null>(null)
 
 /**
  * Each logo in its own colours, so the list is scanned rather than read.
@@ -95,32 +97,41 @@ const BRAND: Partial<Record<IdentityProvider, string>> = {
   github: 'text-black dark:text-white',
   bluesky: 'text-[#0285FF]',
   mastodon: 'text-[#6364FF]',
-  gitlab: 'text-[#FC6D26]',
-  codeberg: 'text-[#2185D0] dark:text-[#4AA3E8]',
-  stackoverflow: 'text-[#F48024]'
+  gitlab: 'text-[#FC6D26]'
 }
 
 /**
- * The select's options: one plain list of places a reader might be, in order of
- * what we can establish there — sign-in first, then the ones we can read, then
- * the ones we can only be told about.
+ * Ordered by where the people asking for books actually are.
  *
- * Deliberately unheaded. The reader is answering "where am I?", which they know
- * the answer to before they know anything about our checks, and sorting the
- * logos under verdicts made the list argue with them mid-question. What each
- * choice is worth is said in full the moment one is made — see the sentence
- * under the field, the card after confirming, and the board itself — so nothing
- * about the weaker routes goes unsaid, it is simply said once the question it
- * answers has been asked.
+ * Not by audience size alone, and not — as it once was — by which we can check
+ * best, which was a ranking of our own convenience wearing the clothes of an
+ * explanation. The three a general reader is overwhelmingly likeliest to hold
+ * come first, then the rest of the mainstream, then the two code forges — which
+ * between them cover the developers and are last because most readers are not
+ * one.
+ *
+ * Deliberately cuts across the three routes, so a strong provider and a wholly
+ * unchecked one sit side by side. What each is worth is said the moment one is
+ * picked, and never in the row itself.
+ *
+ * Anything missing from this list falls to the end, in the order the server sent
+ * it — so a provider added later is merely last, not lost.
  */
-const providerChoices = computed(() =>
-  [...challengeProviders.value, ...lookupProviders.value, ...claimProviders.value]
-    .map(p => ({
-      label: p.label,
-      value: p.id,
-      icon: p.icon,
-      ui: { itemLeadingIcon: BRAND[p.id] }
-    })))
+const POPULARITY: IdentityProvider[] = [
+  'facebook', 'x', 'linkedin',
+  'tiktok', 'twitch', 'bluesky', 'mastodon',
+  'github', 'gitlab'
+]
+
+/** Every place a reader might be, in one row. */
+const providerOptions = computed(() => {
+  const rank = (id: IdentityProvider) => {
+    const i = POPULARITY.indexOf(id)
+    return i === -1 ? POPULARITY.length : i
+  }
+  return [...challengeProviders.value, ...lookupProviders.value, ...claimProviders.value]
+    .sort((a, b) => rank(a.id) - rank(b.id))
+})
 
 /** Which of the three routes the chosen provider takes. */
 const via = computed<'challenge' | 'lookup' | 'claim' | null>(() => {
@@ -135,21 +146,6 @@ const via = computed<'challenge' | 'lookup' | 'claim' | null>(() => {
 const chosenMeta = computed(() =>
   [...lookupProviders.value, ...claimProviders.value].find(p => p.id === chosen.value) ?? null)
 
-/**
- * The chosen provider's logo, for the closed trigger. Nuxt UI's own trigger
- * shows the label alone, which leaves the one row a reader looks at longest as
- * the only one without its mark.
- *
- * Fed to the `icon` prop rather than the `leading` slot: the slot's wrapper is
- * absolutely positioned, and only the prop makes the trigger reserve the space
- * for it — through the slot the logo sits on top of its own label.
- */
-const chosenIcon = computed(() => {
-  const all = [...challengeProviders.value, ...lookupProviders.value, ...claimProviders.value]
-  const entry = all.find(p => p.id === chosen.value)
-  return entry ? { name: entry.icon, class: BRAND[entry.id] } : null
-})
-
 // A challenge comes back through a full page load, so the session is read fresh
 // on the way in. A lookup never leaves the page: the proof is sealed into the
 // cookie by the endpoint, and nothing on the client knows until it is asked
@@ -161,22 +157,24 @@ const { refresh: refreshProof } = useIdentityProof()
 watch(chosen, () => {
   account.value = ''
   error.value = ''
-  result.value = null
 })
 
 async function confirm() {
   if (!chosenMeta.value || !account.value.trim() || busy.value) return
   busy.value = true
   error.value = ''
-  result.value = null
   try {
     const { identity } = await $fetch<{ identity: RequesterIdentity }>(
       via.value === 'claim' ? '/api/verify/claim' : '/api/verify/lookup',
       { method: 'POST', body: { provider: chosen.value, account: account.value } }
     )
-    result.value = identity
     await refreshProof()
     emit('confirmed', identity)
+    // Cleared rather than left showing what was just attached: the caller lists
+    // the accounts in hand, and a picker still holding the last one would invite
+    // the reader to attach it twice.
+    chosen.value = undefined
+    account.value = ''
   } catch (err) {
     error.value = (err as { data?: { statusMessage?: string } })?.data?.statusMessage
       || 'We could not check that account. Please try again.'
@@ -184,18 +182,14 @@ async function confirm() {
     busy.value = false
   }
 }
-
-function accountAge(iso?: string) {
-  if (!iso) return ''
-  const opened = new Date(iso)
-  if (Number.isNaN(opened.getTime())) return ''
-  return opened.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-}
 </script>
 
 <template>
   <div class="flex flex-col gap-4">
-    <div class="flex items-start gap-3 rounded-lg bg-elevated/50 p-4">
+    <div
+      v-if="!adding"
+      class="flex items-start gap-3 rounded-lg bg-elevated/50 p-4"
+    >
       <UIcon
         name="i-lucide-shield-check"
         class="mt-0.5 size-5 shrink-0 text-primary"
@@ -206,7 +200,8 @@ function accountAge(iso?: string) {
         </p>
         <p class="text-muted">
           A sponsor is a stranger paying for your books out of their own pocket. A public
-          account beside your request lets them see who they're giving to.
+          account beside your request lets them see who they're giving to. You can attach
+          more than one — several profiles together say more than any of them alone.
         </p>
         <p class="text-muted">
           Your name, photo and profile link appear on the board. Your address, email and
@@ -219,81 +214,93 @@ function accountAge(iso?: string) {
       v-if="anyProvider"
       class="flex flex-col gap-3"
     >
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-start">
-        <UFormField
-          label="Which social media?"
-          class="sm:w-56"
-        >
-          <!--
-            Taller than the default popup, which cuts off at six rows and so
-            hides five of the eleven providers behind a scroll. A reader on
-            Facebook should not have to go looking for it.
-          -->
-          <USelect
-            v-model="chosen"
-            :items="providerChoices"
-            value-key="value"
-            placeholder="Choose one"
-            class="w-full"
-            :disabled="busy"
-            :icon="chosenIcon?.name"
-            :ui="{ content: 'max-h-96', leadingIcon: chosenIcon?.class }"
-          />
-        </UFormField>
-
+      <!--
+        All of them on screen at once. A reader recognises their own logo far
+        faster than they read a list of names, and neither happens at all behind
+        a closed dropdown — which asked them to open something before it would
+        admit whether it had what they were looking for.
+      -->
+      <div class="flex flex-col gap-2">
         <!--
-          Signing in is a round trip, so it gets a link where the other two get a
-          field: there is nothing for the reader to type, and offering a box
-          beside it would only invite them to type the account they are about to
-          be asked for anyway.
+          Asks what the reader is attaching, not where they live. The old
+          wording — "which social media are you on?" — read as a question about
+          them rather than about the request, which is both more intrusive than
+          anything we do with the answer and less clear about why it is being
+          asked at all. Singular, because a request carries one account: see the
+          note on IdentityProof.
         -->
-        <UFormField
-          v-if="via === 'challenge'"
-          label="&nbsp;"
-          class="flex-1"
-        >
+        <p class="text-sm font-medium text-highlighted">
+          {{ adding
+            ? 'Attach another profile?'
+            : 'What social media profiles would you like to attach to this request?' }}
+        </p>
+        <div class="flex flex-wrap gap-2">
           <UButton
-            :to="challengeUrl(chosen!)"
-            external
-            :icon="challengeProviders.find(p => p.id === chosen)?.icon"
-            :label="`Sign in with ${providerLabel(chosen!)}`"
+            v-for="provider in providerOptions"
+            :key="provider.id"
+            :icon="provider.icon"
+            :label="provider.label"
             color="neutral"
             variant="subtle"
-            block
+            size="sm"
+            :disabled="busy"
+            :class="chosen === provider.id ? 'ring-2 ring-primary' : ''"
+            :ui="{ leadingIcon: BRAND[provider.id] }"
+            :aria-pressed="chosen === provider.id"
+            @click="chosen = provider.id"
           />
-        </UFormField>
-
-        <UFormField
-          v-else
-          :label="chosenMeta ? `Your ${chosenMeta.label} ${chosenMeta.accountHint}` : 'Your username'"
-          class="flex-1"
-          :error="error || undefined"
-        >
-          <div class="flex gap-2">
-            <UInput
-              v-model="account"
-              class="flex-1"
-              :placeholder="chosenMeta?.accountExample || 'Pick a social media first'"
-              autocapitalize="none"
-              autocorrect="off"
-              spellcheck="false"
-              :disabled="!chosenMeta || busy"
-              @keydown.enter.prevent="confirm()"
-            />
-            <UButton
-              :icon="via === 'claim' ? 'i-lucide-check' : 'i-lucide-user-search'"
-              :label="via === 'claim' ? 'Use this' : 'Confirm'"
-              color="neutral"
-              :loading="busy"
-              :disabled="!chosenMeta || !account.trim()"
-              @click="confirm()"
-            />
-          </div>
-          <template #help>
-            Paste your profile link if that's easier.
-          </template>
-        </UFormField>
+        </div>
       </div>
+
+      <!--
+        Signing in is a round trip, so it gets a link where the other two get a
+        field: there is nothing for the reader to type, and offering a box would
+        only invite them to type the account they are about to be asked for
+        anyway.
+      -->
+      <UButton
+        v-if="via === 'challenge'"
+        :to="challengeUrl(chosen!)"
+        external
+        :icon="providerOptions.find(p => p.id === chosen)?.icon"
+        :label="`Sign in with ${providerLabel(chosen!)}`"
+        color="neutral"
+        variant="subtle"
+        size="lg"
+        :ui="{ leadingIcon: BRAND[chosen!] }"
+        block
+      />
+
+      <UFormField
+        v-else-if="chosenMeta"
+        :label="`Your ${chosenMeta.label} ${chosenMeta.accountHint}`"
+        :error="error || undefined"
+      >
+        <div class="flex gap-2">
+          <UInput
+            v-model="account"
+            class="flex-1"
+            :placeholder="chosenMeta.accountExample"
+            autocapitalize="none"
+            autocorrect="off"
+            spellcheck="false"
+            :disabled="busy"
+            autofocus
+            @keydown.enter.prevent="confirm()"
+          />
+          <UButton
+            :icon="via === 'claim' ? 'i-lucide-check' : 'i-lucide-user-search'"
+            :label="via === 'claim' ? 'Use this' : 'Confirm'"
+            color="neutral"
+            :loading="busy"
+            :disabled="!account.trim()"
+            @click="confirm()"
+          />
+        </div>
+        <template #help>
+          Paste your profile link if that's easier.
+        </template>
+      </UFormField>
 
       <!--
         What this particular provider's route will and won't establish, said
@@ -328,77 +335,9 @@ function accountAge(iso?: string) {
         v-else
         class="text-sm text-muted"
       >
-        Pick the social media you're on and we'll tell you what we can check there. Some
-        we can, some we can't, and your request will say which.
+        Pick one and we'll tell you what we can check there. Some we can, some we can't,
+        and your request will say which.
       </p>
-
-      <!--
-        The result, drawn from what the server says was established rather than
-        from which button was pressed. A claimed account gets no avatar and no
-        tick, because a check is precisely the thing that did not happen — its
-        icon is a plain speech mark instead.
-      -->
-      <div
-        v-if="result"
-        class="flex items-start gap-3 rounded-lg bg-elevated/50 p-3 ring ring-default"
-      >
-        <UIcon
-          v-if="result.confirmation === 'claimed'"
-          name="i-lucide-message-square-quote"
-          class="mt-0.5 size-5 shrink-0 text-dimmed"
-        />
-        <UAvatar
-          v-else
-          :src="result.avatarUrl"
-          :alt="result.name"
-          size="md"
-        />
-        <div class="min-w-0 flex-1 space-y-1">
-          <p class="flex items-center gap-1.5 text-sm font-medium text-highlighted">
-            <UIcon
-              v-if="result.confirmation !== 'claimed'"
-              name="i-lucide-circle-check"
-              class="size-4 shrink-0 text-primary"
-            />
-            <span class="truncate">
-              {{ result.confirmation === 'claimed'
-                ? `@${result.handle} on ${providerLabel(result.provider)}`
-                : result.name }}
-            </span>
-          </p>
-          <p
-            v-if="result.confirmation !== 'claimed'"
-            class="truncate text-xs text-dimmed"
-          >
-            {{ result.handle ? `@${result.handle}` : providerLabel(result.provider) }}
-            <span v-if="accountAge(result.accountCreatedAt)">
-              · on {{ providerLabel(result.provider) }} since {{ accountAge(result.accountCreatedAt) }}
-            </span>
-          </p>
-          <p
-            v-if="result.confirmation === 'claimed'"
-            class="text-xs text-muted"
-          >
-            We've taken your word for this one. Your request will show it as told to us,
-            not checked — and it will link to
-            <ULink
-              :to="result.profileUrl"
-              external
-              target="_blank"
-              class="text-primary"
-            >{{ result.profileUrl }}</ULink>
-            so a sponsor can look for themselves. If that link is wrong, fix it now.
-          </p>
-          <p
-            v-else
-            class="text-xs text-muted"
-          >
-            This account exists and we read its public profile. We haven't checked that
-            you're the person who holds it — your request will show it as named, not
-            proved.
-          </p>
-        </div>
-      </div>
     </div>
 
     <p

@@ -7,7 +7,7 @@ import {
   sponsorTotalCents,
   type RequestItem
 } from '#shared/catalog'
-import { isSameAccount } from '#shared/identity'
+import { sharesAccount } from '#shared/identity'
 import type { PublicBookRequest } from '~~/server/utils/requests'
 
 useSeoMeta({
@@ -102,11 +102,11 @@ async function sponsor(id: string) {
 // Taking your own posting down is one click when the proof already in hand is
 // the account that made it. The withdraw page stays for everything else: a proof
 // that has lapsed, a different account, or the link in the confirmation email.
-const { identity } = useIdentityProof()
+const { identities } = useIdentityProof()
 const removingId = ref<string | null>(null)
 
 function isMine(req: PublicBookRequest) {
-  return Boolean(req.requester) && isSameAccount(identity.value, req.requester)
+  return sharesAccount(identities.value, req.requesters)
 }
 
 async function removeMine(req: PublicBookRequest) {
@@ -176,7 +176,7 @@ function formatDate(iso: string) {
         class="flex flex-col gap-4 rounded-lg ring ring-default bg-default p-5"
       >
         <!-- The account leads the card: it is who the sponsor is giving to. -->
-        <RequesterBadge :requester="req.requester" />
+        <RequesterBadge :requesters="req.requesters" />
 
         <div class="flex flex-col gap-3">
           <RequestBooks

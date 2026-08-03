@@ -1,13 +1,20 @@
-// Reading and ending a completed identity challenge.
+// Reading and ending completed identity challenges.
 //
 // The whole lifecycle is: a reader raises a challenge, the provider hands them
-// back, and the proof sits in a sealed cookie until it lapses, they discard it,
-// or a fresh challenge replaces it. Nothing here logs anybody in — there is no
-// account to be in, and a proof that has ended is simply gone.
+// back, and the proof sits in a sealed cookie until it lapses or they discard
+// it. Nothing here logs anybody in — there is no account to be in, and a proof
+// that has ended is simply gone.
 //
-// Within that window one proof covers everything the reader does: post a
-// request, correct it, take it down. It asserts one thing — this account is
-// here — and the first action does not make that less true. Burning it per
+// A reader may attach several accounts to one request, so the cookie holds a
+// *set* of proofs rather than one. Checking a second account therefore adds to
+// what is held instead of replacing it — which is the one behaviour to keep in
+// mind when changing anything below, because the previous version of this file
+// burned the old proof on every new check and reintroducing that would silently
+// drop the account a reader attached a moment ago.
+//
+// Within that window what is held covers everything the reader does: post a
+// request, correct it, take it down. Each proof asserts one thing — this account
+// is here — and the first action does not make that less true. Burning them per
 // action instead put a full round trip to the provider in front of every click,
 // which readers experienced as having to press each button twice.
 //
@@ -18,7 +25,7 @@
 // what makes "over" true rather than merely polite.
 
 import type { H3Event } from 'h3'
-import type { IdentityProof, RequesterIdentity } from '#shared/identity'
+import { accountKey, MAX_ATTACHED, type IdentityProof, type RequesterIdentity } from '#shared/identity'
 
 let schema: Promise<void> | null = null
 function ensureSchema() {
@@ -70,76 +77,106 @@ export async function burnProof(event: H3Event, id: string): Promise<void> {
 }
 
 /**
- * Seal a checked account into the cookie, replacing whatever was there.
+ * Seal a checked account into the cookie, alongside any already there.
  *
  * The one place a proof is minted, for either kind of check — the challenge
- * routes and the lookup endpoint both land here, so there is a single answer to
- * "where do proofs come from" and a single place the `confirmation` recorded on
- * one can be trusted to have come from the code that actually did the checking.
+ * routes, the lookup endpoint and the claim endpoint all land here, so there is
+ * a single answer to "where do proofs come from" and a single place the
+ * `confirmation` recorded on one can be trusted to have come from the code that
+ * actually did the checking.
  *
- * Stored under `proof`, never `user`: this is evidence, not a session.
+ * Re-checking an account already attached replaces that entry rather than
+ * doubling it, and burns the proof it replaces: the fresher check is the one
+ * that should be spendable, and leaving the stale id valid would mean a proof
+ * nothing points at any more still opening doors.
+ *
+ * Stored under `proofs`, never `user`: this is evidence, not a session.
  */
 export async function issueProof(
   event: H3Event,
   identity: Omit<RequesterIdentity, 'verifiedAt'>,
   email?: string
 ): Promise<void> {
-  // A reader can arrive holding a proof already — they picked the wrong account
-  // and want another. Burn the old one: abandoning a proof should leave it as
-  // dead as spending it, rather than merely out of this browser's reach.
-  const previous = await getUserSession(event)
-  if (previous.proof?.id) await burnProof(event, previous.proof.id)
+  const held = await readProofs(event)
+  const key = accountKey(identity)
 
-  // `replaceUserSession`, not `setUserSession`: the latter merges the new value
-  // over the old one, so swapping accounts would inherit whatever the new check
-  // leaves undefined — one account's proof carrying the previous one's email and
-  // avatar. A proof must be exactly one account's.
-  await replaceUserSession(event, {
-    proof: {
-      id: crypto.randomUUID(),
-      identity: { ...identity, verifiedAt: new Date().toISOString() },
-      email: email || undefined
-    }
-  })
-}
+  // The same account checked again — by a stronger route, or just re-typed.
+  const replaced = held.find(p => accountKey(p.identity) === key)
+  if (replaced) await burnProof(event, replaced.id)
 
-/** The proof currently held and still unspent, or null. */
-export async function readProof(event: H3Event): Promise<IdentityProof | null> {
-  const session = await getUserSession(event)
-  const proof = session.proof
-  if (!proof?.id) return null
-  return (await isSpent(proof.id)) ? null : proof
-}
-
-/**
- * The proof currently held, or a 401 the client turns into a challenge prompt.
- *
- * `action` completes the sentence "prove you hold a public account before …",
- * so the message names what the reader was trying to do.
- */
-export async function requireProof(event: H3Event, action: string): Promise<IdentityProof> {
-  const proof = await readProof(event)
-  if (!proof) {
+  const kept = held.filter(p => accountKey(p.identity) !== key)
+  if (kept.length >= MAX_ATTACHED) {
     throw createError({
-      statusCode: 401,
-      statusMessage: `Please prove you hold a public account before ${action}.`
+      statusCode: 400,
+      statusMessage: `You can attach up to ${MAX_ATTACHED} profiles to a request. Remove one to add another.`
     })
   }
-  return proof
+
+  const proof: IdentityProof = {
+    id: crypto.randomUUID(),
+    identity: { ...identity, verifiedAt: new Date().toISOString() },
+    email: email || undefined
+  }
+
+  // `replaceUserSession`, not `setUserSession`: the latter merges the new value
+  // over the old one key by key, which for an array means the shorter list
+  // leaving the tail of the longer one in place — so removing an account would
+  // not take. The whole set is written every time.
+  await replaceUserSession(event, { proofs: [...kept, proof] })
+}
+
+/** Every account attached and still unspent, in the order attached. */
+export async function readProofs(event: H3Event): Promise<IdentityProof[]> {
+  const session = await getUserSession(event)
+  const held = session.proofs ?? []
+  if (held.length === 0) return []
+
+  // Each id is checked, not just the first: proofs end one at a time, so a set
+  // can hold a spent one beside live ones.
+  const live = await Promise.all(
+    held.map(async proof => (proof?.id && !(await isSpent(proof.id)) ? proof : null))
+  )
+  return live.filter((p): p is IdentityProof => p !== null)
 }
 
 /**
- * End the proof now: record the id as finished, then drop the cookie.
+ * The accounts attached, or a 401 the client turns into a challenge prompt.
  *
- * For when the reader is deliberately done with an account — "use a different
- * account" — not after each action they take with it. Actions leave the proof
- * alone and let it lapse on its own, which is what keeps a second action from
+ * `action` completes the sentence "attach a public account before …", so the
+ * message names what the reader was trying to do.
+ */
+export async function requireProofs(event: H3Event, action: string): Promise<IdentityProof[]> {
+  const proofs = await readProofs(event)
+  if (proofs.length === 0) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: `Please attach a public account before ${action}.`
+    })
+  }
+  return proofs
+}
+
+/** Just the accounts, which is what everything downstream of a check wants. */
+export async function requireIdentities(event: H3Event, action: string): Promise<RequesterIdentity[]> {
+  return (await requireProofs(event, action)).map(p => p.identity)
+}
+
+/**
+ * End one attached account, or all of them.
+ *
+ * Record each id as finished, then write back what is left. For when the reader
+ * is deliberately done with an account — removing one they attached, or starting
+ * over — not after each action they take with it. Actions leave proofs alone and
+ * let them lapse on their own, which is what keeps a second action from
  * demanding a second trip to the provider.
  */
-export async function discardProof(event: H3Event): Promise<void> {
-  const session = await getUserSession(event)
-  const id = session.proof?.id
+export async function discardProofs(event: H3Event, key?: string): Promise<void> {
+  const held = await readProofs(event)
+  const going = key ? held.filter(p => accountKey(p.identity) === key) : held
+  const staying = key ? held.filter(p => accountKey(p.identity) !== key) : []
 
-  await clearUserSession(event)
-  if (id) await burnProof(event, id)
+  if (staying.length > 0) await replaceUserSession(event, { proofs: staying })
+  else await clearUserSession(event)
+
+  for (const proof of going) await burnProof(event, proof.id)
 }

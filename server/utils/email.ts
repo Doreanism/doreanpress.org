@@ -3,7 +3,7 @@
 // instead of sent, so the pay-it-forward loop works without credentials.
 
 import { summarizeTitles } from '#shared/catalog'
-import { describeIdentity, type RequesterIdentity } from '#shared/identity'
+import { byStrength, describeIdentity, type RequesterIdentity } from '#shared/identity'
 
 export interface EmailMessage {
   to: string
@@ -238,17 +238,24 @@ ${SIGNATURE}`
   }
 }
 
-// `requester` is the account the reader proved, included so the press
+// `requesters` are the accounts the reader attached, included so the press
 // can spot a pattern of abuse across postings that the shipping name alone
 // would hide.
-export function pressNewRequestEmail(params: { to: string, name: string, titles: string[], message: string, requester?: RequesterIdentity | null }): EmailMessage {
-  const { to, name, titles, message, requester } = params
-  const account = describeIdentity(requester)
+export function pressNewRequestEmail(params: { to: string, name: string, titles: string[], message: string, requesters?: RequesterIdentity[] | null }): EmailMessage {
+  const { to, name, titles, message } = params
+  // Every attached account, strongest first, each with what was checked about
+  // it. Collapsing them to the best one would tell the press a request stands on
+  // firmer ground than it does.
+  const attached = byStrength(params.requesters ?? [])
+  const account = attached.length
+    ? attached.map(i => describeIdentity(i)).join('\n         ')
+    : describeIdentity(null)
+  const links = attached.map(i => i.profileUrl).filter(Boolean)
   const text = `New request on the Give a Book board.
 
 ${titles.length > 1 ? `Books:\n${titles.map(t => `  · ${t}`).join('\n')}` : `Book: ${titles[0] ?? '(unknown)'}`}
 From: ${name}
-Account: ${account}${requester?.profileUrl ? `\n${requester.profileUrl}` : ''}
+Account: ${account}${links.length ? `\n${links.join('\n')}` : ''}
 Message: ${message}`
   return {
     to,
@@ -257,7 +264,9 @@ Message: ${message}`
     html: layout(`<p><strong>New request on the Give a Book board.</strong></p>
 <p><strong>${titles.length > 1 ? 'Books' : 'Book'}:</strong> ${summarizeTitles(titles)}<br/>
 <strong>From:</strong> ${name}<br/>
-<strong>Account:</strong> ${requester?.profileUrl ? `<a href="${requester.profileUrl}">${account}</a>` : account}</p>
+<strong>Account:</strong> ${attached.length
+  ? attached.map(i => (i.profileUrl ? `<a href="${i.profileUrl}">${describeIdentity(i)}</a>` : describeIdentity(i))).join('<br>')
+  : account}</p>
 <blockquote style="border-left:3px solid #ccc;padding-left:12px;color:#57534e">${message}</blockquote>`)
   }
 }

@@ -1,5 +1,5 @@
 import { findBook, itemTitles, type RequestItem } from '#shared/catalog'
-import { accountKey } from '#shared/identity'
+import { accountKey, hasControl } from '#shared/identity'
 
 interface Body {
   items?: { slug?: string, quantity?: number }[]
@@ -23,11 +23,13 @@ export default defineEventHandler(async (event) => {
   // A free book goes to a person, so a request has to come from one. The
   // challenge is what puts a name and a face on the board for the sponsor to
   // look at, and what makes the limit below mean anything.
-  const proof = await requireProof(event, 'asking for a book')
+  const requesters = await requireIdentities(event, 'asking for a book')
 
-  // What this account already has waiting. The limit is one open *destination*,
-  // not one posting — see below, once the address has been read.
-  const waiting = await listOpenRequestsByAccount(accountKey(proof.identity))
+  // What these accounts already have waiting. The limit is one open
+  // *destination*, not one posting — see below, once the address has been read.
+  // Every attached account counts, so detaching one is not a way to get a second
+  // posting.
+  const waiting = await listOpenRequestsForAccounts(requesters.map(accountKey))
 
   const body = await readBody<Body>(event)
 
@@ -100,16 +102,22 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // The rule above is worth exactly what the account behind it cost.
+  // The rule above is worth exactly what the accounts behind it cost.
   //
   // For a signed-in account that is a lot: papering the board means buying more
   // social accounts. For a named one it is nothing — the next request can claim
-  // any handle at all, and `waiting` comes back empty every time. So for those,
-  // hold the line at the doorstep instead, which is the thing a person asking
-  // for parcels cannot multiply: one open order per address, no matter whose
-  // name is on it. A reader who really does share an address with another
-  // requester can still sign in, which is the honest way through.
-  if (proof.identity.confirmation !== 'control' && !already) {
+  // any handle at all, and `waiting` comes back empty every time. So where
+  // nothing here was signed into, hold the line at the doorstep instead, which
+  // is the thing a person asking for parcels cannot multiply: one open order per
+  // address, no matter whose name is on it. A reader who really does share an
+  // address with another requester can still sign in, which is the honest way
+  // through.
+  //
+  // One signed-in account among several is enough to clear this. Attaching a
+  // claimed handle beside a proved account cannot make the proved one cheaper,
+  // and requiring *all* of them to be proved would punish exactly the reader who
+  // gave a sponsor the most to look at.
+  if (!hasControl(requesters) && !already) {
     const here = await listOpenRequestsAtDestination(destination)
     if (here.length > 0) {
       throw createError({
@@ -124,9 +132,10 @@ export default defineEventHandler(async (event) => {
     : await createRequest({
         items,
         message,
-        // Snapshotted, not looked up later: the board should show the account as
-        // it was when the reader stood behind the request, even if they rename it.
-        requester: proof.identity,
+        // Snapshotted, not looked up later: the board should show the accounts
+        // as they were when the reader stood behind the request, even if they
+        // rename themselves afterwards.
+        requesters,
         name,
         email,
         phone,
@@ -142,9 +151,9 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // The proof is left in hand. It is still true that this account is here, and
-  // the reader is very often not finished — correcting the message or taking the
-  // posting down are the next things they do.
+  // The proofs are left in hand. It is still true that these accounts are here,
+  // and the reader is very often not finished — correcting the message or taking
+  // the posting down are the next things they do.
 
   // Confirm to the requester, and (optionally) notify the press. The withdraw
   // link tells them where to go; proving the account again is what authorises it.
@@ -159,7 +168,7 @@ export default defineEventHandler(async (event) => {
   await sendEmail(requestConfirmationEmail({ to: email, name, titles, withdrawUrl }))
   const press = pressEmailAddress()
   if (press) {
-    await sendEmail(pressNewRequestEmail({ to: press, name, titles, message, requester: proof.identity }))
+    await sendEmail(pressNewRequestEmail({ to: press, name, titles, message, requesters }))
   }
 
   return { id: record.id, status: record.status }

@@ -7,7 +7,7 @@
 // the identity stored on the request.
 
 import type { H3Event } from 'h3'
-import { isSameAccount } from '#shared/identity'
+import { sharesAccount } from '#shared/identity'
 import type { BookRequest } from './requests'
 
 /**
@@ -36,11 +36,14 @@ import type { BookRequest } from './requests'
  * a claimed proof past a row posted by someone who signed in. See `claimKey`.
  */
 export async function requireRequestOwner(event: H3Event, request: BookRequest) {
-  if (!request.requester) return
+  if (request.requesters.length === 0) return
 
-  const proof = await requireProof(event, 'changing your request')
+  const held = await requireIdentities(event, 'changing your request')
 
-  if (!isSameAccount(proof.identity, request.requester)) {
+  // Any account in common is enough. A reader who attached three profiles and
+  // comes back holding one of them is the person who posted it, and asking them
+  // to re-attach all three to fix a typo would be a toll rather than a check.
+  if (!sharesAccount(held, request.requesters)) {
     throw createError({
       statusCode: 403,
       statusMessage: 'This request was posted from a different account.'
