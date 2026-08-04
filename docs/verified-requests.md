@@ -3,99 +3,113 @@
 Before asking for a free book, a reader puts a public account behind it. That
 account is shown on the *Give a Book* board beside their message.
 
-## Three checks, and the differences between them
+## One check: the reader signs in
 
-There are three ways to put an account behind a request, and they establish
-quite different things. Everything else in this document depends on keeping them
-apart.
+There is one way to put an account behind a request. The reader goes to a
+provider they hold an account with, signs in there, and the provider tells us who
+they are. `Confirmation` in `shared/identity.ts` records that as `control`, and
+`control` is the only value anything may write.
 
-| | **Sign in** (challenge) | **Name it** (lookup) | **Tell us** (claim) |
-|---|---|---|---|
-| Reader does | Round trip to the provider | Types a handle in a field | Types a handle in a field |
-| Provider says | "this is them" | nothing — we read a public page | nothing — we never ask |
-| Establishes | `control` — the account is theirs | `existence` — the account is real | `claimed` — **nothing** |
-| Providers | X, Facebook, LinkedIn, GitHub, Twitch, TikTok | GitHub, GitLab, Bluesky, Mastodon | X, Facebook, LinkedIn, Twitch, TikTok |
-| Stops impersonation | Yes | **No** | **No** |
-| Account might not exist | No | No | **Yes** |
-| Costs an abuser | A new social account per posting | Nothing — handles are free to type | Nothing — handles are free to type |
+| | **Sign in** (challenge) |
+|---|---|
+| Reader does | Round trip to the provider |
+| Provider says | "this is them" |
+| Establishes | `control` — the account is theirs |
+| Providers | X, Facebook, LinkedIn, GitHub, GitLab, Twitch, TikTok, Bluesky |
+| Stops impersonation | Yes |
+| Costs an abuser | A new social account per posting |
 
-`Confirmation` in `shared/identity.ts` is the type carrying this, and it rides on
-every `RequesterIdentity` from the moment it is created. Read it before writing
-any copy about an account: a `claimed` identity has the same shape as a `control`
-one, and only that field separates "this is Jane" from "somebody typed Jane's
-name into a box".
+**A provider earns its place by federating identity.** If it cannot complete an
+OAuth round trip that ends with the provider itself naming the account, it is not
+offered — however popular it is, and however readable its profiles are.
 
-The third rung is the floor, and it is reached only when the other two are
-impossible: sign-in needs credentials a deployment may not have, and Facebook, X,
-LinkedIn, Twitch and TikTok cannot be looked up at any price. The alternative to
-offering it is telling a reader whose only account is on Facebook that they may
-not ask for a book — a worse answer than showing a sponsor an unchecked handle
-clearly labelled as unchecked. It buys the sponsor exactly one thing: an address
-to go and look at. No copy may suggest it buys more.
+### What used to be here, and why it went
 
-The weaker check is offered because a reader may have no account on any of the
-providers we can sign them into, and a real profile a sponsor can go and read is
-worth more than nothing. It is not offered as an equal. Sign-in is listed first
-in the UI, and a named account is labelled as named everywhere it appears.
+There were two weaker rungs. A reader could *name* an account for us to fetch
+(`existence`: the account is real, and that is all), or simply *tell us* about
+one (`claimed`: nothing whatever was checked). Both are gone, along with
+`accountLookup.ts`, `accountClaim.ts` and the two endpoints that issued them.
 
-### One provider, one route, per deployment
+They went because they answered the wrong question. Reading a public profile
+establishes that an account exists; a sponsor is not asking whether Jane's
+account exists, they are asking whether the person about to receive their money
+is Jane. Handles are free to type, so neither rung stopped impersonation, and
+neither made a second posting cost anything.
 
-**Every provider is offered by the strongest route available for it here, and by
-no other.** Sign-in where there are credentials; otherwise a lookup where the
-provider has a public API; otherwise, and only otherwise, the reader's unchecked
-word. `offeredLookupProviders` and `offeredClaimProviders` each subtract the
-configured challenges, and `POST /api/verify/lookup` and `POST /api/verify/claim`
-refuse the same combinations directly, so the rule holds for a caller who skips
-the UI.
+The knock-on was worse than the rungs themselves. Every rule on this site that
+leans on an account being *expensive* — the one-order-per-account limit,
+ownership of a request, withdrawal — was worth nothing against a handle anybody
+could type, so each had to be propped up by a second rule keyed off
+`confirmation !== 'control'`: a doorstep check limiting one open order per
+address regardless of who posted it. With one rung the props come out. The
+doorstep branch is gone from `POST /api/requests`, because `hasControl` is now
+true for anything that reaches it.
 
-The reason is narrow. With a *Sign in with X* button on screen, the only reader
-who would instead type an X username into a weaker field is one who cannot sign
-into that account — which is precisely the person the stronger check exists to
-catch. Offering both would mean publishing an impersonation route alongside the
-thing that prevents it. Configure X and the option to merely claim an X account
-disappears the same moment the button appears.
+If a future change is tempted to add a rung back: the test is not "can we check
+this cheaply", it is "does this tell a sponsor who they are paying". Being
+checkable was never the point.
 
-### Claimed accounts get their own key namespace
+### Nothing weaker is honoured, including proofs already issued
 
-A claimed account's `subject` is `claimed:<handle>`, never the bare handle, and
-`claimKey` is the only thing that should ever build it. This is not tidiness.
+`completeChallenge` stamps `control` itself, so no adapter can claim it for
+something weaker. That covers issuance. It does not cover the sealed cookies
+already in readers' browsers when the weaker routes were withdrawn — a proof of a
+merely-named account stayed cryptographically valid for up to twenty minutes
+afterwards.
 
-`accountKey` is what `requireRequestOwner` compares and what the per-account
-limit counts. An X username may be all digits, and an X user id *is* a number —
-so an unprefixed key would let somebody claim the handle `1234567` and land on
-`x:1234567`, the very key the real account with id 1234567 gets when its holder
-signs in. The two accounts would become one, and the claimer would inherit the
-right to edit and withdraw that person's request. The prefix keeps the namespaces
-apart; a test pins it.
+So `readProofs` filters on `confirmation === 'control'` and is the single answer
+to "what counts". Doing it there rather than at each of the four places a proof
+is spent means the rule does not depend on remembering to ask.
 
-Note the consequence, which is the price of this rung: unlike GitHub — where
-sign-in and lookup share the provider's numeric id, so the real holder can take
-over an account someone named — a claimed handle can *never* be reconciled with
-the same person signing in later, because we have no id to match on. There is no
-takeover path for a claimed row.
+### Rows already on the board keep their own verdict
 
-Because both routes key `subject` off the same numeric GitHub id, an account is
-the same account either way. A request posted under a *named* GitHub handle
-therefore belongs, by `accountKey`, to whoever can actually sign into it — so the
-real holder can take over or withdraw a request somebody else posted in their
-name. That is the intended behaviour, and it is the one repair available to
-someone impersonated this way.
+`existence` and `claimed` remain in the `Confirmation` union, and
+`confirmationClaim` keeps a branch for each. Deleting them would not delete the
+rows that carry them — it would only stop the board describing those rows
+honestly, which is the one thing that must not happen. `RequesterBadge` still
+draws four states; the request modal no longer does, because only one is
+reachable there.
 
-### Where the lost scarcity is made up
+Three of the four retired routes reconcile with sign-in, and by design: a named
+GitHub, GitLab or Bluesky account was stored under the provider's own id — the
+numeric id, or the DID — which is exactly the id the sign-in route records. The
+reader who named one of those can sign into it today and be recognised as the
+poster of their old request.
 
-The per-account limit further down assumes an account is *expensive*. That holds
-for one that was signed into and collapses for both weaker rungs — the next
-request can name or claim any handle at all. So for those the limit moves to the
-doorstep: **one open order per address, whoever posted it**. That is the thing a
-person asking for parcels cannot multiply. See the second check in
-`POST /api/requests`; a reader who genuinely shares an address with another
-requester can still sign in, which is the honest way past it.
+Two kinds of row cannot be matched by anyone: a *claimed* handle, keyed
+`claimed:<handle>` in a namespace nothing can produce a proof in, and a Mastodon
+account, which has no sign-in route to come back through. On those the emailed
+link is the whole capability, as it is for rows posted before any of this
+existed. `requireRequestOwner` says the same in more detail.
 
-That check keys off `confirmation !== 'control'`, which is why adding the third
-rung needed no change to it: `claimed` fails that test exactly as `existence`
-does, and inherits the doorstep rule automatically. Any *fourth* rung would too.
-Anything that ever tests for `=== 'existence'` instead would silently exempt
-claimed accounts — don't write that.
+### Mastodon is kept as metadata only
+
+Mastodon is the one provider dropped rather than promoted. Every Mastodon server
+is its own OAuth issuer, so signing in means registering an application with each
+instance a reader might be on — there is no single app to configure and so no way
+to prove a Mastodon account. Its entry stays in `IDENTITY_PROVIDERS`, marked
+`legacy`, so rows posted under it keep their label and icon. A test pins that it
+is never offered.
+
+### Bluesky needs a handle first, and it is not a claim
+
+Bluesky is the one provider that cannot be a single button. atproto is a network
+of servers, so the handle is what resolves which PDS holds the account and
+therefore which server is being asked to sign the reader in.
+
+That field resembles the old lookup field and means something entirely
+different: nothing believes what is typed. Type a handle that is not yours and
+you arrive at that person's server, needing that person's password. The proof
+still comes from the OAuth round trip, and `subject` is the DID — not the handle,
+which is a rented DNS name that can move between accounts and would let a
+transferred handle inherit the previous holder's requests.
+
+Bluesky also needs no credentials: the client is public, identified by a metadata
+document this site serves. It is therefore always offered, and it is why a
+deployment with no OAuth applications registered anywhere can still take
+requests. Without it, `configuredProviders` returning empty means the site
+accepts nothing at all — which is the honest failure, and stated as such on the
+form.
 
 ## It's a challenge, not a login
 
@@ -161,39 +175,24 @@ No id, no name: `challengeFailed` logs the reason, sends the reader back with
 posted. The reader sees a toast (`useChallengeFeedback`); the underlying error
 stays in the log, because provider errors carry client ids and internal URLs.
 
-A named account is fetched the same way, at the provider named and nowhere else
-— `server/utils/accountLookup.ts`, one adapter each, reached through
-`POST /api/verify/lookup`. Three rules hold across all of them:
+Bluesky reaches the same place by a slightly longer road: the handle the reader
+types is resolved to their PDS, and that server runs the sign-in. `user.did` is
+the id checked before anything is believed, for the same reason as everywhere
+else.
 
-- **Only "definitely not there" reads as not found**, and how a provider says it
-  varies. GitHub and Mastodon answer 404; Bluesky answers 400; GitLab answers
-  **200 with an empty list**, so there the absence is in the body and a
-  status-code check alone would report every unknown handle as found. A timeout, a
-  500 or a rate-limit is *unknown* and is reported as "we
-  couldn't reach them", never as "you made that up". The distinction survives all
-  the way to the reader's screen.
-- **The reader's text never lands in a URL unencoded**, no adapter follows a
-  redirect off the host it chose, and every call is time-bounded.
-- **Mastodon's host comes from the reader**, which makes it the one lookup that
-  could be aimed at our own network. `isAllowedMastodonHost` requires a public
-  domain and refuses bare hostnames, anything that parses as an IP address, and
-  the usual internal suffixes — before any request leaves the process. That
-  guard has its own tests in `test/accountLookup.test.ts`.
+| Provider | Name | Photo | Public link | Age | Provider's own badge |
+|---|---|---|---|---|---|
+| X | ✓ | ✓ | ✓ `x.com/<handle>` | — | ✓ blue check |
+| Facebook | ✓ | ✓ | — | — | — |
+| LinkedIn | ✓ | ✓ | — | — | — |
+| Twitch | ✓ | ✓ | ✓ `twitch.tv/<login>` | ✓ | — |
+| TikTok | ✓ | ✓ | — (see below) | — | ✓ their own |
+| GitHub | ✓ | ✓ | ✓ `github.com/<login>` | ✓ | — |
+| GitLab | ✓ | ✓ | ✓ `gitlab.com/<username>` | ✓ | — |
+| Bluesky | ✓ | ✓ | ✓ `bsky.app/profile/<handle>` | ✓ | — |
 
-| Provider | Route | Name | Photo | Public link | Age | Provider's own badge |
-|---|---|---|---|---|---|---|
-| X | sign in | ✓ | ✓ | ✓ `x.com/<handle>` | — | ✓ blue check |
-| Facebook | sign in | ✓ | ✓ | — | — | — |
-| LinkedIn | sign in | ✓ | ✓ | — | — | — |
-| Twitch | sign in | ✓ | ✓ | ✓ `twitch.tv/<login>` | ✓ | — |
-| TikTok | sign in | ✓ | ✓ | — (see below) | — | ✓ their own |
-| GitHub | either | ✓ | ✓ | ✓ `github.com/<login>` | ✓ | — |
-| Bluesky | name it | ✓ | ✓ | ✓ `bsky.app/profile/<handle>` | ✓ | — |
-| Mastodon | name it | ✓ | ✓ | ✓ `<server>/@<user>` | ✓ | — |
-| GitLab | name it | ✓ | ✓ | ✓ `gitlab.com/<username>` | — | — |
-
-Among the sign-in providers, X, Twitch and GitHub hand us a profile a sponsor can
-open. Facebook's `user_link` permission and LinkedIn's vanity name both sit behind
+X, Twitch, GitHub, GitLab and Bluesky hand us a profile a sponsor can open.
+Facebook's `user_link` permission and LinkedIn's vanity name both sit behind
 partner review, and Facebook's plain numeric id is app-scoped, so it resolves to
 nothing for anybody else. Requests from those two show a verified name and face
 with nothing to click.
@@ -204,17 +203,17 @@ asks for `user.info.basic` alone because an unapproved scope fails the whole
 authorisation. The mapping already reads the handle where it is granted, so
 adding the scope and flipping `linkable` is the entire change once approved.
 
-Nearly every lookup provider gives a public link, which is not a coincidence —
-being publicly readable is exactly what makes them lookup-able in the first
-place. Most also give the date the account was opened, and that is carried
-(`accountCreatedAt`) and shown precisely because it matters most where the
-evidence is weakest: a named account cannot be shown to be the reader's, but a
-ten-year-old one is still a far better thing to put in front of a sponsor than
-one opened this morning. GitLab is the exception — it returns `created_at` only
-to an authenticated caller — so those badges simply omit the age rather than
-invent one.
+Most providers also give the date the account was opened, and that is carried
+(`accountCreatedAt`) and shown. It is worth less than it was — every account on
+the board from now on has been proved to be the reader's, so age is no longer
+carrying the weight that control could not — but a ten-year-old account still
+tells a sponsor something a new one does not, and it costs nothing to pass on.
+GitLab returns `created_at` on `read_user`, so it now carries an age it could not
+when it was only read publicly.
 
-The board draws four states and must never collapse them (`RequesterBadge.vue`):
+The board still draws four states and must never collapse them
+(`RequesterBadge.vue`). Only the first can be earned now; the rest are history
+the board is still obliged to tell truthfully:
 
 - **proved** — a tick, and "Signed in with X — the account is theirs."
 - **named** — no tick, and "This GitHub account is real, but we haven't checked
@@ -224,6 +223,12 @@ The board draws four states and must never collapse them (`RequesterBadge.vue`):
   haven't checked that it exists or that it's theirs — Facebook gives us no way
   to. Open it and judge for yourself."
 - **none** — a legacy row, marked as posted before any of this was required.
+
+Do not simplify this component on the grounds that everything is proved now. Any
+row still on the board that was posted under the old rungs would then be drawn as
+proved, which is the one lie this whole feature exists to avoid. The request modal
+*was* simplified, and that is safe for the opposite reason: it lists only what is
+in the cookie, and nothing weaker can get into one.
 
 The gap between **named** and **told** is easy to wave away as a shade of grey
 and it is not: one means we fetched a page and the account was there, the other
@@ -270,12 +275,6 @@ to avoid making for us.
   from the old one-request-per-account rule are folded on the first write
   (`ensureSchema`); an in-flight checkout still points at the surviving id,
   because the earliest row is the one kept.
-- **One open order per address, where nothing was signed into.** The rule above
-  is worth what the accounts behind it cost, and a named one cost nothing. So a
-  request with no `control` account among those attached (`hasControl`) is also
-  refused if *any* open order is already going to that address, whoever posted it
-  (`listOpenRequestsAtDestination`). Signing in lifts that restriction, which is
-  the honest way for two people who really do share an address.
 - **Only a posting account may edit or withdraw.** `PATCH`/`DELETE` compare what
   is in hand against the accounts stored on the request, and any one in common is
   enough (`sharesAccount`) — a reader who attached three profiles and comes back
@@ -284,13 +283,12 @@ to avoid making for us.
   in the confirmation email stays the key — no weaker than the day they were
   posted, and it doesn't strand anyone.
 
-  On a request whose account was *named*, be clear about what this check is
-  worth: the handle is printed on the board, so anyone can go and get a matching
-  `existence` proof for it. It is a speed bump, not authorisation. It is kept
-  because it costs the reader nothing and does stop the idle case, but the real
-  protection on those rows is the same one legacy rows have — an unguessable id
-  arriving by email. See the note in `server/utils/requestAccess.ts`, and the
-  open gap below.
+  This check is now worth what it reads as being worth. While an account could be
+  merely named, the handle was printed on the board and anyone could go and get a
+  matching proof for it, so it was a speed bump rather than authorisation. With
+  only signed-in accounts issuable it means what it says. See the note in
+  `server/utils/requestAccess.ts` for which old rows can still be matched — most
+  can — and which can no longer be matched by anyone.
 - **No cap on how many copies a request asks for.** A sponsor chooses what they
   cover and can fund part of an order, so a large request takes nothing from
   anyone who did not decide to give it. One open order per doorstep is the limit
@@ -305,29 +303,16 @@ gets a one-click removal on the card; everyone else follows that link to
 
 ## Setting up the providers
 
-The lookup providers need no setup at all — public read-only APIs, no key, no app
-registration — so GitHub, GitLab, Bluesky and Mastodon work out
-of the box, in dev and in production alike. GitHub does too, right up until you
-configure it below, at which point it becomes a sign-in provider instead.
+**Bluesky needs no setup and is always offered.** atproto identifies a client by
+a metadata document rather than a secret, and `nuxt-auth-utils` serves it from
+this site once `auth.atproto` is on (it is, in `nuxt.config.ts`). So a deployment
+with no OAuth applications registered anywhere still takes requests — from
+readers with a Bluesky account, proved exactly as strongly as any other. That is
+what keeps "sign-in only" from meaning "nothing works until you fill in six
+forms".
 
-The claim route needs no setup either, and it is what a deployment falls back on
-for X, Facebook, LinkedIn, Twitch and TikTok until their credentials are filled
-in. That means a site with no OAuth apps at all still takes requests from readers
-on those five — as unchecked handles, labelled as such. If you would rather not
-offer that, configure the provider's credentials and the claim option for it
-disappears; there is deliberately no switch to turn the rung off while leaving
-the provider unreachable, because that combination is just "we don't support
-Facebook", which is what an empty roster already says.
-
-Quotas are worth knowing even though none needs a key: GitHub allows 60
-unauthenticated calls an hour per IP and Stack Exchange 300 a day, both far above
-what this form generates, and both a per-IP limit rather than a per-site one. If
-either is ever reached the reader is told we couldn't reach the provider, never
-that their account doesn't exist.
-
-Everything below is about the sign-in providers. Each is optional: one with no
-credentials is simply not offered, so you can ship with one and add the others
-later. Register the callback URL as `<site>/verify/<provider>` — e.g.
+Every other provider is optional and simply not offered without credentials.
+Register the callback URL as `<site>/verify/<provider>` — e.g.
 `http://localhost:3000/verify/x`.
 
 - **X** — [developer.x.com](https://developer.x.com): an OAuth 2.0 app, type
@@ -341,6 +326,11 @@ later. Register the callback URL as `<site>/verify/<provider>` — e.g.
 - **GitHub** — [github.com/settings/developers](https://github.com/settings/developers):
   a plain OAuth App, no review, scope `read:user`. The cheapest of the lot to
   register, and it gives sponsors a profile to open.
+- **GitLab** — [gitlab.com/-/profile/applications](https://gitlab.com/-/profile/applications):
+  scope `read_user`, which is the smallest that returns a profile. Do not leave
+  the default `api` scope on: it is a write-capable token for a check that reads
+  one page.
+- **Bluesky** — nothing to register. See above.
 - **Twitch** — [dev.twitch.tv/console](https://dev.twitch.tv/console): register an
   application, category *Website Integration*, scope `user:read:email`.
 - **TikTok** — [developers.tiktok.com](https://developers.tiktok.com): add *Login
@@ -366,51 +356,43 @@ gone on purpose, and it should not come back:
   provider returning no profile, a callback URL registered wrong, a scope not
   granted — lives in the round trip the mock replaced.
 
-So exercising the *challenge* locally needs real credentials for at least one
-provider. GitHub is the cheapest to register — a plain OAuth App, no review
-queue — and it gives sponsors a profile to open, so it is the one to start with;
-the callback URL for a dev app is `http://localhost:3000/verify/github`.
+The lookup and claim routes are gone too, and they were the other way of walking
+this flow without credentials. Nothing replaced them, and nothing should: both
+let a request onto the board that nobody had proved anything about, which is what
+this page exists to prevent.
 
-The *lookup* path needs none of that and is the one to reach for when you just
-want to walk the request flow: name any real GitHub, GitLab, Bluesky or Mastodon
-account and the form unlocks. That is a convenience of it being
-genuinely public, not a stand-in — the account really is fetched, and a handle
-that does not exist is refused exactly as it would be in production.
-
-The two do not overlap for GitHub, so pick one: configure the credentials and it
-becomes a sign-in provider, or leave them blank and name accounts at it instead.
-Testing both routes locally means toggling `NUXT_OAUTH_GITHUB_CLIENT_ID`.
+What you use instead is **Bluesky**, which needs no registration and is a real
+round trip — a genuine sign-in at the reader's own PDS, failing in production
+exactly as it fails locally. It is not a stand-in for the challenge; it *is* the
+challenge, on the one provider that does not ask you to fill in a form first.
+Walking the request flow locally means having a Bluesky account, or registering a
+GitHub OAuth App, which is the cheapest of the credentialed ones — no review
+queue, callback `http://localhost:3000/verify/github`.
 
 ## Worth doing next
 
 - **The handler rules have no automated coverage.** They were checked by hand
-  against the local stack. Unit tests reach pure functions only — `shared/`, the
-  lookup adapters' shape and host checks, and `destinationKey` / `orderKey` /
-  `foldOrders`. What is untested is every rule that lives in a handler: proof
-  required to post, one order per doorstep, the named-account address rule, and
-  ownership on edit and withdraw. That needs a request-level harness, and it is
-  the obvious gap. Removing the mock provider made it harder, not easier — a
-  test can no longer mint a proof by walking an HTTP route, so the harness will
-  have to seal a proof cookie directly. The one-route-per-provider rule joins
-  that list: `offeredLookupProviders` and the matching refusal in
-  `POST /api/verify/lookup` both read runtime config, so the unit tests can only
-  pin the static shape of the two lists, not the rule itself.
-- **No adapter is exercised against the provider it talks to.** The lookup tests
-  deliberately never touch the network, which keeps them fast and honest but
-  means a provider changing a field name breaks the badge silently. The traps
-  here are real — a since-removed Codeberg adapter read an `active` field that
-  Forgejo fills in only for admins and returns `false` to everyone else, which
-  would have reported every real account as missing — and that one was caught by
-  hand, not by a test. A contract test run on a schedule rather than in CI is
-  probably the shape of the fix.
+  against the local stack. Unit tests reach pure functions only — `shared/`, and
+  `destinationKey` / `orderKey` / `foldOrders`. What is untested is every rule
+  that lives in a handler: proof required to post, one order per doorstep,
+  ownership on edit and withdraw, and — now the most load-bearing of them —
+  `readProofs` refusing anything that is not `control`. That needs a
+  request-level harness. There is no mock provider to mint a proof through, so
+  the harness will have to seal a proof cookie directly, which is also the only
+  way to test that a pre-existing weaker proof is refused.
+- **No route is exercised against the provider it talks to.** A provider
+  renaming a field breaks the badge silently, and the traps are real: a
+  since-removed Codeberg adapter read an `active` field that Forgejo fills in
+  only for admins, which would have reported every real account as missing. A
+  contract test run on a schedule rather than in CI is probably the shape of the
+  fix. Bluesky is the one that can be exercised without credentials.
 - **Request ids are public, and withdrawal leans on them.** The board renders
-  every open request's id, and for a legacy row or a named account the id is
-  effectively the whole capability. Moving withdrawal onto its own unguessable
-  token, emailed and never rendered, would fix that and make ownership on named
-  accounts mean something at the same time.
+  every open request's id, and for a legacy row — or one posted under a claimed
+  handle or a Mastodon account, neither of which anyone can prove now — that id
+  is effectively the whole capability. Moving withdrawal onto its own unguessable
+  token, emailed and never rendered, is the fix.
 - Avatars are hotlinked from the providers' CDNs and those URLs expire; the badge
   falls back to initials, but caching them would look better over time.
-- Nothing rate-limits either check. Someone with a pile of throwaway accounts can
-  post one request each, and lookups are unmetered outbound calls to third
-  parties on an unauthenticated endpoint — worth a per-IP limit before this sees
-  real traffic.
+- Nothing rate-limits the challenge. Someone with a pile of real social accounts
+  can still post one request each — which is now the actual cost of papering the
+  board, and the reason the weaker rungs are gone.

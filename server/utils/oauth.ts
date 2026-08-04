@@ -12,12 +12,10 @@ import type { H3Event } from 'h3'
 import { withQuery } from 'ufo'
 import type {
   ChallengeProvider,
-  ClaimProvider,
   IdentityProvider,
-  LookupProvider,
   RequesterIdentity
 } from '#shared/identity'
-import { CHALLENGE_PROVIDERS, CLAIM_PROVIDERS, LOOKUP_PROVIDERS } from '#shared/identity'
+import { CHALLENGE_PROVIDERS } from '#shared/identity'
 
 /**
  * Holds the page the reader left, across the round trip to the provider. A
@@ -89,49 +87,31 @@ export function challengeFailed(event: H3Event, provider: IdentityProvider, erro
  * Providers that actually have credentials, so the UI never offers a button
  * that dead-ends on a configuration error.
  *
- * The same list in dev as in production. A deployment with none configured
- * cannot take requests at all, and says so rather than falling back to
- * something that would let anyone through.
+ * The same list in dev as in production, and it is now the whole of what the
+ * site offers. A deployment with none configured cannot take requests at all and
+ * says so plainly — which is the honest failure, and the one this site chooses.
+ * It used to fall back to reading a named account, and then to simply believing
+ * one; both let a request onto the board that nobody had proved anything about,
+ * which is exactly what a sponsor was relying on us for.
  *
- * TikTok names its half of the pair `clientKey`, not `clientId` — so the check
- * asks the provider's own config what it is called rather than assuming, which
- * is the difference between TikTok being offered and TikTok silently never
- * appearing however carefully its credentials were filled in.
+ * Two providers do not fit the clientId/clientSecret shape and both would be
+ * silently dropped by a check that assumed it:
+ *
+ * - TikTok names its half of the pair `clientKey`. Asking the provider's own
+ *   config what it is called is the difference between TikTok being offered and
+ *   TikTok never appearing however carefully its credentials were filled in.
+ * - Bluesky has no secret to hold. Its client is public and identified by the
+ *   metadata document this site serves, so there is nothing to configure and
+ *   nothing that can be left blank — it is always available, which is what
+ *   keeps "no credentials anywhere" from meaning "no requests at all".
  */
+const NO_CREDENTIALS_NEEDED = new Set<ChallengeProvider>(['bluesky'])
+
 export function configuredProviders(event?: H3Event): ChallengeProvider[] {
   const oauth = useRuntimeConfig(event).oauth
   return CHALLENGE_PROVIDERS.filter((p) => {
+    if (NO_CREDENTIALS_NEEDED.has(p)) return true
     const config = oauth[p] as { clientId?: string, clientKey?: string, clientSecret?: string } | undefined
     return Boolean((config?.clientId || config?.clientKey) && config?.clientSecret)
   })
-}
-
-/**
- * Lookup providers this deployment actually offers.
- *
- * Everything on the list, less anything that can be signed into here. See
- * `isChallengeProvider` in `#shared/identity` for why the stronger route
- * withdraws the weaker one rather than sitting beside it.
- */
-export function offeredLookupProviders(event?: H3Event): LookupProvider[] {
-  const challenge = new Set<string>(configuredProviders(event))
-  return LOOKUP_PROVIDERS.filter(p => !challenge.has(p))
-}
-
-/**
- * Claimable providers this deployment actually offers.
- *
- * The same subtraction one rung down, and together the three functions state
- * the whole rule: **every provider is offered by the strongest route available
- * for it here, and by no other.** Sign-in where there are credentials;
- * otherwise a lookup where the provider has a public API; otherwise, and only
- * otherwise, the reader's unchecked word.
- *
- * `CLAIM_PROVIDERS` already excludes everything with a lookup API, so the only
- * subtraction left is the configured challenges. Configure X and the option to
- * merely claim an X account disappears the same moment the button appears.
- */
-export function offeredClaimProviders(event?: H3Event): ClaimProvider[] {
-  const challenge = new Set<string>(configuredProviders(event))
-  return CLAIM_PROVIDERS.filter(p => !challenge.has(p))
 }

@@ -19,32 +19,33 @@ export type IdentityProvider
     | 'github' | 'gitlab' | 'bluesky' | 'mastodon'
 
 /**
- * What a completed check actually establishes. The single most important
- * distinction in this file — everything a sponsor is shown depends on it.
+ * What a completed check actually establishes.
  *
- * Three rungs, strongest first:
+ * Only one of these can be issued: `control`. A reader goes to the provider,
+ * signs in, and the provider tells us who they are — so every account attached
+ * from now on is one the reader demonstrably holds. Typing a handle into a box
+ * is not evidence of anything and is no longer accepted, by any route.
  *
- * - `control` — the reader went to the provider, signed in, and the provider
- *   told us who they are. They *are* this account.
+ * The other two are **read-only history**. They describe rows posted while the
+ * weaker routes existed, and the board still draws them with the verdict they
+ * were actually given:
+ *
  * - `existence` — the reader typed an account and we fetched its public profile.
- *   The account is real and looks as described; whether the reader is the person
- *   holding it is not established, and must never be implied.
+ *   The account was real and looked as described; whether the reader was the
+ *   person holding it was never established.
  * - `claimed` — the reader typed an account and we checked *nothing*. Not that
- *   it is theirs, not even that it is there. All we did was confirm the handle
- *   is shaped like one that provider could issue, and build a link a sponsor can
- *   open for themselves.
+ *   it was theirs, not even that it was there.
  *
- * The bottom two are weak in a specific, load-bearing way: handles are free to
- * type, so neither prevents impersonation nor makes a second posting cost
- * anything. Rules that lean on scarcity have to bite somewhere else for these —
- * see the doorstep check in `POST /api/requests`, which keys off
- * `confirmation !== 'control'` and so covers both without needing to know about
- * this third rung at all.
+ * They are kept in the union rather than deleted because deleting them would not
+ * delete the rows: it would only stop the board describing those rows honestly,
+ * which is the one thing that must not happen. Nothing may *write* them — see
+ * `completeChallenge`, which stamps `control` by construction, and `readProofs`,
+ * which refuses any proof carrying anything else.
  *
- * `claimed` exists because Facebook, X and LinkedIn have no public profile API,
- * so on a deployment without their OAuth credentials there is otherwise no way
- * for a reader on those to say so. It buys the sponsor exactly one thing — an
- * address to go and look at — and the copy must never suggest it buys more.
+ * Why the weaker rungs went: handles are free to type, so neither prevented
+ * impersonation nor made a second posting cost anything, and a sponsor was being
+ * asked to spend real money on the difference between "we read a page" and "they
+ * are this person".
  */
 export type Confirmation = 'control' | 'existence' | 'claimed'
 
@@ -201,182 +202,106 @@ export interface ProviderMeta {
    */
   linkable: boolean
   /**
-   * The strongest thing this provider can be made to establish here.
+   * Whether this provider can still be attached, or is only here to describe
+   * accounts already on the board.
    *
-   * Not what a given identity carries — that is `confirmation` on the identity
-   * itself, set by whichever route did the checking. A provider offering both
-   * routes reads `control` here, because that is the best it can do; an account
-   * of theirs that was merely named still carries `existence`.
+   * Mastodon is the one legacy entry. Every Mastodon server is its own OAuth
+   * issuer, so signing in means registering an application with each one a
+   * reader might be on — there is no single app to configure, and so no way to
+   * prove a Mastodon account under the rule this file now enforces. Its metadata
+   * stays because rows posted under it must keep their label and their icon.
    */
-  confirms: Confirmation
-  /** For lookup providers: what the reader is being asked to type. */
-  accountHint?: string
-  /** For lookup providers: a example of the shape, shown in the field. */
-  accountExample?: string
+  legacy?: boolean
 }
 
 export const IDENTITY_PROVIDERS: Record<IdentityProvider, ProviderMeta> = {
-  // The five with no public lookup API. Each still carries an account hint,
-  // because when this deployment has no credentials for one the reader can name
-  // it anyway — unchecked, and labelled so. See CLAIM_PROVIDERS.
   x: {
     label: 'X',
     icon: 'i-simple-icons-x',
-    linkable: true,
-    confirms: 'control',
-    accountHint: 'username',
-    accountExample: 'jack'
+    linkable: true
   },
   facebook: {
     label: 'Facebook',
     icon: 'i-simple-icons-facebook',
-    linkable: false,
-    confirms: 'control',
-    accountHint: 'username, or the name in your profile link',
-    accountExample: 'jane.doe'
+    linkable: false
   },
   linkedin: {
     label: 'LinkedIn',
     icon: 'i-simple-icons-linkedin',
-    linkable: false,
-    confirms: 'control',
-    accountHint: 'the name at the end of your profile link',
-    accountExample: 'jane-doe-1a2b3c'
+    linkable: false
   },
   twitch: {
     label: 'Twitch',
     icon: 'i-simple-icons-twitch',
-    linkable: true,
-    confirms: 'control',
-    accountHint: 'username',
-    accountExample: 'alice'
+    linkable: true
   },
   tiktok: {
     label: 'TikTok',
     icon: 'i-simple-icons-tiktok',
-    linkable: false,
-    confirms: 'control',
-    accountHint: 'username',
-    accountExample: 'alice'
+    linkable: false
   },
-  // The one provider on both lists: a reader can sign in with GitHub or, where
-  // that is not configured, simply name an account for us to read.
   github: {
     label: 'GitHub',
     icon: 'i-simple-icons-github',
-    linkable: true,
-    confirms: 'control',
-    accountHint: 'username',
-    accountExample: 'torvalds'
+    linkable: true
   },
   gitlab: {
     label: 'GitLab',
     icon: 'i-simple-icons-gitlab',
-    linkable: true,
-    confirms: 'existence',
-    accountHint: 'username',
-    accountExample: 'alice'
+    linkable: true
   },
   bluesky: {
     label: 'Bluesky',
     icon: 'i-simple-icons-bluesky',
-    linkable: true,
-    confirms: 'existence',
-    accountHint: 'handle',
-    accountExample: 'alice.bsky.social'
+    linkable: true
   },
+  // Read-only from here down — see `legacy` on ProviderMeta.
   mastodon: {
     label: 'Mastodon',
     icon: 'i-simple-icons-mastodon',
     linkable: true,
-    confirms: 'existence',
-    accountHint: 'full address, including the server',
-    accountExample: 'alice@mastodon.social'
+    legacy: true
   }
 }
 
 /**
  * Providers a reader proves *control* of, by going there and coming back.
  *
+ * The whole list, because it is now the only list. A provider earns its place
+ * here by federating identity — offering an OAuth round trip that ends with the
+ * provider itself telling us which account the reader holds. Anything that
+ * cannot do that cannot be attached, however popular it is and however easy its
+ * handles would be to read: an account we cannot prove is an account a sponsor
+ * would be trusting on the reader's say-so.
+ *
  * Every one is a real round trip, in dev exactly as in production. There is
  * deliberately no stand-in: a challenge that can be satisfied without an account
  * is not a challenge, and one that behaves differently on a developer's machine
  * is not the thing being tested.
  */
-export type ChallengeProvider = Extract<
-  IdentityProvider, 'x' | 'facebook' | 'linkedin' | 'twitch' | 'tiktok' | 'github'
->
+export type ChallengeProvider = Exclude<IdentityProvider, 'mastodon'>
 
 /** In the order offered, which is the order they were added. */
 export const CHALLENGE_PROVIDERS: ChallengeProvider[] = [
-  'x', 'facebook', 'linkedin', 'github', 'twitch', 'tiktok'
+  'x', 'facebook', 'linkedin', 'github', 'twitch', 'tiktok', 'gitlab', 'bluesky'
 ]
 
 /**
- * Providers whose accounts a reader can simply *name*, for us to go and read.
+ * Whether an account on this provider can still be attached.
  *
- * Two conditions, and a provider needs both. First, it must actually allow it:
- * a public profile over a documented, unauthenticated API that answers "no such
- * account" distinguishably. That is what keeps X, Facebook and LinkedIn out —
- * Facebook removed username lookup from the Graph API, LinkedIn has no public
- * profile API at all, and X's requires a paid bearer token. Reading their HTML
- * instead would be scraping: against their terms, blocked from server IPs, and
- * broken by the next markup change. If one of them ever needs to be offered this
- * way, it needs credentials and a real client, not a page fetch.
+ * There used to be two more lists here — providers whose accounts a reader could
+ * *name* for us to fetch, and providers they could merely *say* they were on —
+ * and the rule was that each provider was offered by the strongest route
+ * available for it. The rule now has only one rung to choose from, so the lists
+ * are gone with the routes that read them.
  *
- * Second, and it is the condition that is easy to forget: somebody asking for a
- * free book has to plausibly be on it. Codeberg and Stack Overflow both met the
- * first test and were offered for a while on the strength of it, which was
- * letting the ease of checking decide what to ask for — a Codeberg account is a
- * thing almost nobody outside a narrow world has, and a Stack Overflow one is
- * asked for as a number out of a URL. Being checkable is not a reason to be on
- * this list.
- *
- * The two code forges that remain are here because between them they cover
- * essentially everyone who writes software, and where a reader has one it is
- * usually the account of theirs with the longest visible history — which is
- * exactly what this rung is worth showing a sponsor.
- */
-export type LookupProvider = Extract<
-  IdentityProvider, 'github' | 'gitlab' | 'bluesky' | 'mastodon'
->
-
-export const LOOKUP_PROVIDERS: LookupProvider[] = [
-  'github', 'gitlab', 'bluesky', 'mastodon'
-]
-
-/**
- * Providers a reader can only *say* they are on.
- *
- * Exactly the providers with no public lookup API — so this list is derived,
- * not chosen, and a provider joins `LOOKUP_PROVIDERS` the moment one becomes
- * available rather than staying here out of habit. Nothing that can be read is
- * ever merely claimed.
- *
- * This is the floor of the three rungs, and it is only ever reached when both
- * of the others are unavailable: sign-in needs credentials this deployment may
- * not have, and these five cannot be looked up at any price. The alternative to
- * offering it is telling a reader whose only account is on Facebook that they
- * may not ask for a book, which is a worse answer than showing a sponsor an
- * unchecked handle clearly labelled as unchecked.
- */
-export type ClaimProvider = Exclude<IdentityProvider, LookupProvider>
-
-export const CLAIM_PROVIDERS: ClaimProvider[] = CHALLENGE_PROVIDERS.filter(
-  (p): p is ClaimProvider => !(LOOKUP_PROVIDERS as string[]).includes(p)
-)
-
-/**
- * The two lists overlap, and a deployment must still offer each provider only
- * one way.
- *
- * GitHub can be signed into *and* read publicly. Where its credentials are set,
- * offering both would be strictly worse than offering the challenge alone: the
- * only reader who would choose to merely name a GitHub account, with the sign-in
- * button right beside it, is one who cannot sign into it. So the stronger route
- * wins and the weaker one is withdrawn — see `offeredLookupProviders`, which
- * decides this per deployment, and the matching refusal in
- * `POST /api/verify/lookup` that stops it being skipped past.
+ * What went with them is worth recording, so it is not rediscovered as a good
+ * idea. Reading a public profile answers "is this account real", which was never
+ * the question a sponsor is asking; they are asking "is this the person I am
+ * about to pay for". Every rule on this site that leans on an account costing
+ * something to come by — the one-order-per-account limit, request ownership,
+ * withdrawal — was worth nothing against a handle that is free to type, and had
+ * to be propped up by a second rule at the doorstep. One rung removes the props.
  */
 export function isChallengeProvider(value: string): value is ChallengeProvider {
   return (CHALLENGE_PROVIDERS as string[]).includes(value)
@@ -402,8 +327,9 @@ export function isSameAccount(
   return Boolean(a && b && accountKey(a) === accountKey(b))
 }
 
-export function providerConfirms(provider: IdentityProvider): Confirmation {
-  return IDENTITY_PROVIDERS[provider]?.confirms ?? 'existence'
+/** Whether this provider can still be attached, or only described. */
+export function isLegacyProvider(provider: IdentityProvider): boolean {
+  return Boolean(IDENTITY_PROVIDERS[provider]?.legacy)
 }
 
 /** Whether this account was proved, rather than merely named and read. */
@@ -416,10 +342,12 @@ export function isControlConfirmed(
 /**
  * The claim being made about an account, in the site's own words.
  *
- * One sentence each, and every branch is load-bearing. The weaker two have to
- * stop a reasonable person concluding that we checked the reader is this person,
- * because we did not, and a sponsor is about to spend money on the difference.
- * Do not soften either into "verified".
+ * One sentence each, and every branch is load-bearing. Only the first can be
+ * earned now; the other two are what the board says about rows posted while the
+ * weaker routes existed, and they have to go on stopping a reasonable person
+ * concluding that we checked the reader is this person — because we did not, and
+ * a sponsor is about to spend money on the difference. Do not soften either into
+ * "verified", and do not delete them while any such row is still on the board.
  *
  * The `claimed` wording says *nothing was checked* rather than leaving it to be
  * inferred from what is missing. A reader skimming three cards will not notice

@@ -51,9 +51,6 @@ const attachedCount = computed(() => {
     : `${used} of ${MAX_ATTACHED} profiles attached, which is as many as one request can carry.`
 })
 
-const proved = (identity: RequesterIdentity) => identity.confirmation === 'control'
-const told = (identity: RequesterIdentity) => identity.confirmation === 'claimed'
-
 // The challenge means leaving the site, so the modal can't survive the round
 // trip on its own. It asks the provider to come back to this page with a marker
 // and reopens itself — otherwise the reader lands back on the cart wondering
@@ -302,40 +299,27 @@ async function submit() {
             :alt="identity.name"
             size="sm"
           />
+          <!--
+            One verdict, because only one is reachable: everything in this list
+            was signed into. The three-way version here was the modal's half of
+            the promise that the board would describe a weaker account honestly,
+            and it went with the rungs it described. `RequesterBadge` keeps its
+            four states — the board still draws rows posted under the old ones.
+          -->
           <div class="min-w-0 flex-1">
             <p class="flex items-center gap-1.5 text-sm font-medium text-highlighted">
               <span class="truncate">{{ identity.name }}</span>
               <UIcon
-                :name="told(identity) ? 'i-lucide-message-square-quote' : proved(identity) ? 'i-lucide-badge-check' : 'i-lucide-search-check'"
-                class="size-4 shrink-0"
-                :class="proved(identity) ? 'text-primary' : 'text-dimmed'"
+                name="i-lucide-badge-check"
+                class="size-4 shrink-0 text-primary"
               />
               <span class="truncate text-xs font-normal text-dimmed">
                 {{ identity.handle ? `@${identity.handle}` : providerLabel(identity.provider) }}
               </span>
             </p>
-            <p
-              v-if="proved(identity)"
-              class="text-xs text-muted"
-            >
+            <p class="text-xs text-muted">
               Verified, and shown on the board beside your message so sponsors know who
               they're giving to.
-            </p>
-            <p
-              v-else-if="told(identity)"
-              class="text-xs text-muted"
-            >
-              Shown on the board beside your message. Because we can't check this one at
-              all, your request will say you told us about it and we took your word —
-              with a link so a sponsor can look for themselves.
-            </p>
-            <p
-              v-else
-              class="text-xs text-muted"
-            >
-              Found, and shown on the board beside your message. Because you didn't sign
-              in, your request will say this account is real but wasn't proved to be
-              yours.
             </p>
           </div>
           <UButton

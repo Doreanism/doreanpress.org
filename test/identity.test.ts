@@ -1,16 +1,17 @@
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   accountKey,
   byStrength,
   CHALLENGE_PROVIDERS,
-  CLAIM_PROVIDERS,
   confirmationClaim,
   describeIdentity,
   IDENTITY_PROVIDERS,
   isControlConfirmed,
+  isLegacyProvider,
   isSameAccount,
   hasControl,
-  LOOKUP_PROVIDERS,
   primaryIdentity,
   sharesAccount,
   providerIcon,
@@ -152,85 +153,51 @@ describe('provider metadata', () => {
     }
   })
 
-  // Every offered provider must be one an account is actually checked at. A
-  // stand-in that satisfies the challenge without an account would quietly undo
-  // the only thing the challenge is for.
+  // The roster is exactly what can be signed into, plus what can only be
+  // described. A provider in the metadata that is on neither footing is one
+  // nobody decided about.
   it('offers nothing that is not a real provider', () => {
-    const offered = new Set([...CHALLENGE_PROVIDERS, ...LOOKUP_PROVIDERS, ...CLAIM_PROVIDERS])
-    expect(Object.keys(IDENTITY_PROVIDERS).sort()).toEqual([...offered].sort())
-    for (const provider of LOOKUP_PROVIDERS) {
-      expect(IDENTITY_PROVIDERS[provider]).toBeDefined()
+    const known = Object.keys(IDENTITY_PROVIDERS) as IdentityProvider[]
+    const legacy = known.filter(isLegacyProvider)
+    expect([...CHALLENGE_PROVIDERS, ...legacy].sort()).toEqual([...known].sort())
+  })
+
+  // The direction that matters. A legacy provider in the offered list would put
+  // a button on screen with no route behind it; the reverse — an offered
+  // provider marked legacy — would hide a working one. Both are the same
+  // mistake, and this pins it in both directions.
+  it('never offers a provider it cannot check', () => {
+    for (const provider of CHALLENGE_PROVIDERS) {
+      expect(isLegacyProvider(provider), provider).toBe(false)
+    }
+    for (const provider of Object.keys(IDENTITY_PROVIDERS) as IdentityProvider[]) {
+      if (isLegacyProvider(provider)) {
+        expect(CHALLENGE_PROVIDERS as string[], provider).not.toContain(provider)
+      }
+    }
+  })
+
+  // Mastodon is the only account that can be on the board without being
+  // provable, and it is here rather than deleted so those rows keep their label
+  // and icon. If this ever fails because a second provider was retired, the
+  // question to ask is whether the board still describes its rows honestly.
+  it('keeps the retired provider describable', () => {
+    const legacy = (Object.keys(IDENTITY_PROVIDERS) as IdentityProvider[]).filter(isLegacyProvider)
+    expect(legacy).toEqual(['mastodon'])
+    for (const provider of legacy) {
+      expect(providerLabel(provider)).toBeTruthy()
       expect(providerIcon(provider)).toMatch(/^i-/)
     }
   })
 
-  // The three rungs have to partition the roster: every provider reachable by
-  // at least one route, and nothing claimable that could be read instead. Which
-  // single route a deployment offers is decided at runtime from credentials —
-  // see offeredLookupProviders / offeredClaimProviders — and is not reachable
-  // from here.
-  it('leaves no provider unreachable, and claims nothing it could read', () => {
-    for (const provider of Object.keys(IDENTITY_PROVIDERS) as IdentityProvider[]) {
-      const reachable = (CHALLENGE_PROVIDERS as string[]).includes(provider)
-        || (LOOKUP_PROVIDERS as string[]).includes(provider)
-        || (CLAIM_PROVIDERS as string[]).includes(provider)
-      expect(reachable, provider).toBe(true)
-    }
-    for (const provider of CLAIM_PROVIDERS) {
-      expect(LOOKUP_PROVIDERS, provider).not.toContain(provider)
-    }
-  })
-
-  // A reader has to be told what to type wherever they are asked to type an
-  // account, and that is now both of the weaker routes.
-  it('tells the reader what to type for every account they can name', () => {
-    for (const provider of [...LOOKUP_PROVIDERS, ...CLAIM_PROVIDERS]) {
-      expect(IDENTITY_PROVIDERS[provider].accountHint, provider).toBeTruthy()
-      expect(IDENTITY_PROVIDERS[provider].accountExample, provider).toBeTruthy()
-    }
-  })
-
-  // The lists may overlap — GitHub can be signed into *or* named — but only for
-  // a provider that can genuinely do the stronger check. An overlap on anything
-  // else would mean a lookup-only provider had been filed as provable.
-  //
-  // Which of the two a deployment actually offers is decided at runtime by
-  // `offeredLookupProviders`, and it is never both: configuring the challenge
-  // withdraws the lookup. That rule reads runtime config, so it is not reachable
-  // from here — it is the untested handler rule flagged in the docs.
-  it('only lets a provider sit on both lists if it can prove control', () => {
-    const both = CHALLENGE_PROVIDERS.filter(p => (LOOKUP_PROVIDERS as string[]).includes(p))
-    expect(both).toEqual(['github'])
-    for (const provider of both) {
-      expect(IDENTITY_PROVIDERS[provider].confirms).toBe('control')
-    }
-  })
-
-  // The two lists are what every downstream rule keys off, so a provider filed
-  // under the wrong one would hand out the strong claim for the weak check.
-  it('files each provider under the check it can actually do', () => {
+  // Every offered provider needs the route its button points at. Offering one
+  // without it is a 404 at exactly the moment a reader has agreed to prove who
+  // they are, and nothing else in this suite would catch it: the list and the
+  // routes are edited in different files.
+  it('has a sign-in route for every provider it offers', () => {
+    const routes = fileURLToPath(new URL('../server/routes/verify/', import.meta.url))
     for (const provider of CHALLENGE_PROVIDERS) {
-      expect(IDENTITY_PROVIDERS[provider].confirms).toBe('control')
-    }
-    for (const provider of LOOKUP_PROVIDERS) {
-      // `confirms` is the best a provider can do, so one that is only ever
-      // looked up must say so. GitHub is exempt because it is also signed into.
-      if (!(CHALLENGE_PROVIDERS as string[]).includes(provider)) {
-        expect(IDENTITY_PROVIDERS[provider].confirms).toBe('existence')
-      }
-      // A reader has to be told what to type, or the field is a guessing game.
-      expect(IDENTITY_PROVIDERS[provider].accountHint).toBeTruthy()
-      expect(IDENTITY_PROVIDERS[provider].accountExample).toBeTruthy()
-    }
-  })
-
-  // None of these can be looked up: Facebook removed username lookup from the
-  // Graph API, LinkedIn has no public profile API, X's needs a paid token, and
-  // Twitch and TikTok both require an app token for theirs. Adding one here
-  // would mean somebody had reached for HTML scraping.
-  it('keeps the providers with no public lookup API out of the lookup list', () => {
-    for (const provider of ['x', 'facebook', 'linkedin', 'twitch', 'tiktok']) {
-      expect(LOOKUP_PROVIDERS).not.toContain(provider)
+      expect(existsSync(`${routes}${provider}.get.ts`), provider).toBe(true)
     }
   })
 
@@ -245,10 +212,10 @@ describe('provider metadata', () => {
     expect(IDENTITY_PROVIDERS.tiktok.linkable).toBe(false)
   })
 
-  // Being publicly readable is what makes a provider lookup-able in the first
-  // place, so every one of them owes a sponsor something to open.
-  it('gives a sponsor a profile to open for every account that can be named', () => {
-    for (const provider of LOOKUP_PROVIDERS) {
+  // The three that hand back a public URL owe a sponsor something to open —
+  // a proved account they cannot look at is worth much less than one they can.
+  it('gives a sponsor a profile to open where the provider allows it', () => {
+    for (const provider of ['github', 'gitlab', 'bluesky'] as IdentityProvider[]) {
       expect(IDENTITY_PROVIDERS[provider].linkable, provider).toBe(true)
     }
   })

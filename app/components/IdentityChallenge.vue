@@ -1,40 +1,34 @@
 <script setup lang="ts">
-// Puts a public account behind a request, by whichever of three routes the
-// reader has one for.
+// Puts a public account behind a request, by signing into it.
 //
-// Not a login. There is no account to create, no password, and nothing is
-// remembered afterwards — the copy below is careful not to imply otherwise.
+// Not a login here either — there is no account to create on this site, no
+// password of ours, and nothing is remembered afterwards. The reader goes to a
+// provider they already have an account with, that provider tells us who they
+// are, and we keep the answer for twenty minutes.
 //
-// One row of logos, not three panels. A reader knows which social media they
-// are on long before they know which of our three checks it happens to support,
-// so the question asked first is theirs — "where can we find you?" — every
-// answer to it is on screen at once, and the route follows from the answer.
+// This used to offer three routes: sign in, or name an account for us to fetch,
+// or simply tell us about one. The bottom two are gone. They asked a sponsor to
+// pay real money on the strength of a handle anybody could type, and no amount
+// of careful labelling around them changed what they actually established, which
+// was nothing about the person asking. What is left is the only route that ever
+// answered the sponsor's real question — is this the person I am about to pay
+// for — so there is now one kind of button, one promise, and no rung to explain.
 //
-// What must survive that merge is the thing the three routes differ on. Signing
-// in proves the account is the reader's. Naming one for us to read only proves
-// it is there. Telling us about one proves nothing whatever. The row itself
-// stays out of that argument — it is ordered by how many people are on each
-// thing and otherwise just names places — and the promise for the chosen
-// provider is spelled out the moment one is picked, before anything is typed.
-// It is never left to be inferred from a missing tick, because a sponsor is
-// about to spend money on the difference.
+// One row of logos. A reader knows which social media they are on long before
+// they know anything about how we check it, so the question asked is theirs —
+// where can we find you? — and every answer is on screen at once.
 //
-// The provider lists come from the server rather than being hard-coded, so a
-// deployment that has only configured one of them never shows a button that
-// dead-ends on the provider's error page, and no provider ever appears under
-// two routes at once.
+// The provider list comes from the server rather than being hard-coded, so a
+// deployment that has credentials for only some of them never shows a button
+// that dead-ends on a configuration error. An empty list is a real state and is
+// drawn as one: no providers, no requests.
 
-import { providerLabel, type IdentityProvider, type RequesterIdentity } from '#shared/identity'
+import { providerLabel, type IdentityProvider } from '#shared/identity'
 
 interface ChallengeOption {
   id: IdentityProvider
   label: string
   icon: string
-}
-
-interface NamedOption extends ChallengeOption {
-  accountHint: string
-  accountExample: string
 }
 
 const props = withDefaults(defineProps<{
@@ -59,7 +53,13 @@ const props = withDefaults(defineProps<{
   limit?: number
 }>(), { adding: false })
 
-const emit = defineEmits<{ confirmed: [RequesterIdentity] }>()
+const route = useRoute()
+const { data: providers } = await useFetch<{ challenge: ChallengeOption[] }>(
+  '/api/verify/providers',
+  { default: () => ({ challenge: [] }) }
+)
+
+const anyProvider = computed(() => providers.value.challenge.length > 0)
 
 /**
  * The invitation to attach more than one, with the ceiling named where there is
@@ -70,30 +70,38 @@ const allowance = computed(() => props.limit
   ? `You can attach up to ${props.limit} profiles — several together say more than any one of them alone.`
   : 'You can attach more than one — several profiles together say more than any of them alone.')
 
-const route = useRoute()
-const { data: providers } = await useFetch<{
-  challenge: ChallengeOption[]
-  lookup: NamedOption[]
-  claim: NamedOption[]
-}>('/api/verify/providers', { default: () => ({ challenge: [], lookup: [], claim: [] }) })
-
-const challengeProviders = computed(() => providers.value.challenge)
-const lookupProviders = computed(() => providers.value.lookup)
-const claimProviders = computed(() => providers.value.claim)
-
-const anyProvider = computed(() =>
-  challengeProviders.value.length + lookupProviders.value.length + claimProviders.value.length > 0)
-
-function challengeUrl(provider: IdentityProvider) {
+function challengeUrl(provider: IdentityProvider, handle?: string) {
   const params = new URLSearchParams({ redirect: props.redirect || route.fullPath })
+  if (handle) params.set('handle', handle)
   return `/verify/${provider}?${params}`
 }
 
-// ── choosing a provider ──
-const chosen = ref<IdentityProvider | undefined>()
-const account = ref('')
-const busy = ref(false)
-const error = ref('')
+/**
+ * Bluesky is the one provider that cannot be a single button, because atproto
+ * is a network of servers rather than one: the handle is what says which server
+ * holds the account, and so which one is being asked to sign the reader in.
+ *
+ * The field looks like the one the old lookup route had and means something
+ * entirely different — nothing here believes what is typed. Type a handle that
+ * is not yours and you arrive at that person's server needing that person's
+ * password. The copy under the field says so, because the resemblance is exactly
+ * the sort of thing a reader would otherwise draw the wrong conclusion from.
+ */
+const HANDLE_PROVIDER: IdentityProvider = 'bluesky'
+const handleFor = ref<IdentityProvider | null>(null)
+const handle = ref('')
+
+function choose(provider: IdentityProvider) {
+  if (provider !== HANDLE_PROVIDER) return
+  handleFor.value = handleFor.value === provider ? null : provider
+  handle.value = ''
+}
+
+function goToHandleProvider() {
+  const typed = handle.value.trim().replace(/^@/, '')
+  if (!typed) return
+  return navigateTo(challengeUrl(HANDLE_PROVIDER, typed), { external: true })
+}
 
 /**
  * Each logo in its own colours, so the list is scanned rather than read.
@@ -116,7 +124,6 @@ const BRAND: Partial<Record<IdentityProvider, string>> = {
   tiktok: 'text-black dark:text-white',
   github: 'text-black dark:text-white',
   bluesky: 'text-[#0285FF]',
-  mastodon: 'text-[#6364FF]',
   gitlab: 'text-[#FC6D26]'
 }
 
@@ -130,16 +137,12 @@ const BRAND: Partial<Record<IdentityProvider, string>> = {
  * between them cover the developers and are last because most readers are not
  * one.
  *
- * Deliberately cuts across the three routes, so a strong provider and a wholly
- * unchecked one sit side by side. What each is worth is said the moment one is
- * picked, and never in the row itself.
- *
  * Anything missing from this list falls to the end, in the order the server sent
  * it — so a provider added later is merely last, not lost.
  */
 const POPULARITY: IdentityProvider[] = [
   'facebook', 'x', 'linkedin',
-  'tiktok', 'twitch', 'bluesky', 'mastodon',
+  'tiktok', 'twitch', 'bluesky',
   'github', 'gitlab'
 ]
 
@@ -149,59 +152,8 @@ const providerOptions = computed(() => {
     const i = POPULARITY.indexOf(id)
     return i === -1 ? POPULARITY.length : i
   }
-  return [...challengeProviders.value, ...lookupProviders.value, ...claimProviders.value]
-    .sort((a, b) => rank(a.id) - rank(b.id))
+  return [...providers.value.challenge].sort((a, b) => rank(a.id) - rank(b.id))
 })
-
-/** Which of the three routes the chosen provider takes. */
-const via = computed<'challenge' | 'lookup' | 'claim' | null>(() => {
-  if (!chosen.value) return null
-  if (challengeProviders.value.some(p => p.id === chosen.value)) return 'challenge'
-  if (lookupProviders.value.some(p => p.id === chosen.value)) return 'lookup'
-  if (claimProviders.value.some(p => p.id === chosen.value)) return 'claim'
-  return null
-})
-
-/** The chosen provider's own entry. Challenge options carry no account hint. */
-const chosenMeta = computed(() =>
-  [...lookupProviders.value, ...claimProviders.value].find(p => p.id === chosen.value) ?? null)
-
-// A challenge comes back through a full page load, so the session is read fresh
-// on the way in. A lookup never leaves the page: the proof is sealed into the
-// cookie by the endpoint, and nothing on the client knows until it is asked
-// again. Without this the account is confirmed and the form stays locked.
-const { refresh: refreshProof } = useIdentityProof()
-
-// Switching provider invalidates whatever was typed for the previous one — a
-// GitHub username is not a Mastodon address — so the field starts clean.
-watch(chosen, () => {
-  account.value = ''
-  error.value = ''
-})
-
-async function confirm() {
-  if (!chosenMeta.value || !account.value.trim() || busy.value) return
-  busy.value = true
-  error.value = ''
-  try {
-    const { identity } = await $fetch<{ identity: RequesterIdentity }>(
-      via.value === 'claim' ? '/api/verify/claim' : '/api/verify/lookup',
-      { method: 'POST', body: { provider: chosen.value, account: account.value } }
-    )
-    await refreshProof()
-    emit('confirmed', identity)
-    // Cleared rather than left showing what was just attached: the caller lists
-    // the accounts in hand, and a picker still holding the last one would invite
-    // the reader to attach it twice.
-    chosen.value = undefined
-    account.value = ''
-  } catch (err) {
-    error.value = (err as { data?: { statusMessage?: string } })?.data?.statusMessage
-      || 'We could not check that account. Please try again.'
-  } finally {
-    busy.value = false
-  }
-}
 </script>
 
 <template>
@@ -234,129 +186,86 @@ async function confirm() {
       v-if="anyProvider"
       class="flex flex-col gap-3"
     >
-      <!--
-        All of them on screen at once. A reader recognises their own logo far
-        faster than they read a list of names, and neither happens at all behind
-        a closed dropdown — which asked them to open something before it would
-        admit whether it had what they were looking for.
-      -->
       <div class="flex flex-col gap-2">
-        <!--
-          Asks what the reader is attaching, not where they live. The old
-          wording — "which social media are you on?" — read as a question about
-          them rather than about the request, which is both more intrusive than
-          anything we do with the answer and less clear about why it is being
-          asked at all. Singular, because a request carries one account: see the
-          note on IdentityProof.
-        -->
         <p class="text-sm font-medium text-highlighted">
           {{ adding
             ? 'Attach another profile?'
             : 'What social media profiles would you like to attach to this request?' }}
         </p>
+
+        <!--
+          Every provider is a link straight to its own sign-in, because every
+          provider now does the same thing. The picker used to be two steps —
+          choose, then read what that choice would establish, then act — which
+          existed because the three routes established different things. With one
+          route the sentence is the same for all of them, so it is said once
+          above rather than n times behind a click.
+        -->
         <div class="flex flex-wrap gap-2">
-          <UButton
+          <template
             v-for="provider in providerOptions"
             :key="provider.id"
-            :icon="provider.icon"
-            :label="provider.label"
-            color="neutral"
-            variant="subtle"
-            size="sm"
-            :disabled="busy"
-            :class="chosen === provider.id ? 'ring-2 ring-primary' : ''"
-            :ui="{ leadingIcon: BRAND[provider.id] }"
-            :aria-pressed="chosen === provider.id"
-            @click="chosen = provider.id"
-          />
+          >
+            <UButton
+              v-if="provider.id === HANDLE_PROVIDER"
+              :icon="provider.icon"
+              :label="provider.label"
+              color="neutral"
+              variant="subtle"
+              size="sm"
+              :class="handleFor === provider.id ? 'ring-2 ring-primary' : ''"
+              :ui="{ leadingIcon: BRAND[provider.id] }"
+              :aria-pressed="handleFor === provider.id"
+              @click="choose(provider.id)"
+            />
+            <UButton
+              v-else
+              :to="challengeUrl(provider.id)"
+              external
+              :icon="provider.icon"
+              :label="provider.label"
+              color="neutral"
+              variant="subtle"
+              size="sm"
+              :ui="{ leadingIcon: BRAND[provider.id] }"
+            />
+          </template>
         </div>
       </div>
 
-      <!--
-        Signing in is a round trip, so it gets a link where the other two get a
-        field: there is nothing for the reader to type, and offering a box would
-        only invite them to type the account they are about to be asked for
-        anyway.
-      -->
-      <UButton
-        v-if="via === 'challenge'"
-        :to="challengeUrl(chosen!)"
-        external
-        :icon="providerOptions.find(p => p.id === chosen)?.icon"
-        :label="`Sign in with ${providerLabel(chosen!)}`"
-        color="neutral"
-        variant="subtle"
-        size="lg"
-        :ui="{ leadingIcon: BRAND[chosen!] }"
-        block
-      />
-
       <UFormField
-        v-else-if="chosenMeta"
-        :label="`Your ${chosenMeta.label} ${chosenMeta.accountHint}`"
-        :error="error || undefined"
+        v-if="handleFor"
+        :label="`Your ${providerLabel(handleFor)} handle`"
       >
         <div class="flex gap-2">
           <UInput
-            v-model="account"
+            v-model="handle"
             class="flex-1"
-            :placeholder="chosenMeta.accountExample"
+            placeholder="alice.bsky.social"
             autocapitalize="none"
             autocorrect="off"
             spellcheck="false"
-            :disabled="busy"
             autofocus
-            @keydown.enter.prevent="confirm()"
+            @keydown.enter.prevent="goToHandleProvider()"
           />
           <UButton
-            :icon="via === 'claim' ? 'i-lucide-check' : 'i-lucide-user-search'"
-            :label="via === 'claim' ? 'Use this' : 'Confirm'"
+            icon="i-lucide-external-link"
+            label="Continue"
             color="neutral"
-            :loading="busy"
-            :disabled="!account.trim()"
-            @click="confirm()"
+            :disabled="!handle.trim()"
+            @click="goToHandleProvider()"
           />
         </div>
         <template #help>
-          Paste your profile link if that's easier.
+          Bluesky is many servers, so your handle is how we find yours — you'll still sign
+          in there. Typing someone else's gets you their sign-in page, not their account.
         </template>
       </UFormField>
 
-      <!--
-        What this particular provider's route will and won't establish, said
-        before anything is typed rather than only in the confirmation
-        afterwards. This is the sentence the three-panel layout used to carry.
-      -->
-      <p
-        v-if="via === 'challenge'"
-        class="text-sm text-muted"
-      >
-        You'll go to {{ providerLabel(chosen!) }}, sign in, and come straight back. That
-        proves the account is yours — the strongest thing any of these can show a sponsor.
-        We never post anything.
-      </p>
-      <p
-        v-else-if="via === 'lookup'"
-        class="text-sm text-muted"
-      >
-        We'll fetch the profile to check it's really there. This shows a sponsor a real
-        account — but it doesn't prove the account is yours, and your request will say so.
-      </p>
-      <p
-        v-else-if="via === 'claim'"
-        class="text-sm text-muted"
-      >
-        We can't check {{ providerLabel(chosen!) }} at all — not that the account is
-        yours, not even that it exists — so your request will say plainly that you told us
-        and we took your word for it. A sponsor can still open your profile and judge for
-        themselves.
-      </p>
-      <p
-        v-else
-        class="text-sm text-muted"
-      >
-        Pick one and we'll tell you what we can check there. Some we can, some we can't,
-        and your request will say which.
+      <p class="text-sm text-muted">
+        You'll go to the provider, sign in, and come straight back. That proves the account
+        is yours, which is the only thing we're willing to show a sponsor. We never post
+        anything.
       </p>
     </div>
 

@@ -1,5 +1,5 @@
 import { findBook, itemTitles, type RequestItem } from '#shared/catalog'
-import { accountKey, hasControl } from '#shared/identity'
+import { accountKey } from '#shared/identity'
 
 interface Body {
   items?: { slug?: string, quantity?: number }[]
@@ -102,30 +102,18 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // The rule above is worth exactly what the accounts behind it cost.
+  // The rule above is worth exactly what the accounts behind it cost, and they
+  // now cost the same as they did on the strongest rung: every account here was
+  // signed into, so papering the board means buying more social accounts.
   //
-  // For a signed-in account that is a lot: papering the board means buying more
-  // social accounts. For a named one it is nothing — the next request can claim
-  // any handle at all, and `waiting` comes back empty every time. So where
-  // nothing here was signed into, hold the line at the doorstep instead, which
-  // is the thing a person asking for parcels cannot multiply: one open order per
-  // address, no matter whose name is on it. A reader who really does share an
-  // address with another requester can still sign in, which is the honest way
-  // through.
-  //
-  // One signed-in account among several is enough to clear this. Attaching a
-  // claimed handle beside a proved account cannot make the proved one cheaper,
-  // and requiring *all* of them to be proved would punish exactly the reader who
-  // gave a sponsor the most to look at.
-  if (!hasControl(requesters) && !already) {
-    const here = await listOpenRequestsAtDestination(destination)
-    if (here.length > 0) {
-      throw createError({
-        statusCode: 409,
-        statusMessage: 'There is already an open request going to this address. If it is yours, add books to it instead of posting again — or sign in with a social account to post separately.'
-      })
-    }
-  }
+  // There used to be a second check underneath this one — where nothing had been
+  // signed into, one open order per address regardless of whose name was on it —
+  // because a named or claimed handle was free to type and `waiting` came back
+  // empty every time. It was a prop under a rule that could not hold its own
+  // weight, and it went when the rungs it propped up did. `hasControl` is now
+  // true for anything that reaches here, by `readProofs`, so keeping it would
+  // have meant a branch that could never be taken guarding a case that can no
+  // longer happen.
 
   const record = already
     ? await updateRequest(already.id, foldOrders(already, { items, message }))

@@ -43,22 +43,37 @@ export default defineNuxtConfig({
     },
     // Public accounts a reader can prove they hold in order to post a free-book
     // request.
-    // Each is optional: a provider with no credentials simply isn't offered, so
-    // the site runs with one, some or all of them — or none, in which case
-    // readers fall back to naming a public account we look up instead (no
-    // credentials, and a weaker claim, which the site states plainly). No
-    // stand-in anywhere.
-    // Configuring GitHub here withdraws GitHub from the lookup list, since the
-    // same account can then be proved rather than merely named.
+    //
+    // Each is optional and a provider with no credentials simply isn't offered.
+    // There is no fallback beneath them any more: a deployment that configures
+    // none of these can take no requests, and says so, rather than accepting an
+    // account nobody proved anything about. Bluesky is the exception that keeps
+    // that from being a cliff — see below.
     oauth: {
       x: { clientId: '', clientSecret: '' },
       facebook: { clientId: '', clientSecret: '' },
       linkedin: { clientId: '', clientSecret: '' },
       github: { clientId: '', clientSecret: '' },
+      gitlab: { clientId: '', clientSecret: '' },
       twitch: { clientId: '', clientSecret: '' },
       // `clientKey`, not `clientId` — TikTok's own name for it, and what
       // nuxt-auth-utils reads. `configuredProviders` accepts either.
-      tiktok: { clientKey: '', clientSecret: '' }
+      tiktok: { clientKey: '', clientSecret: '' },
+      // Bluesky needs no credentials at all, and that is a property of atproto
+      // rather than an oversight: the client is public, identified by a metadata
+      // document served from this site (`/bluesky/client-metadata.json`, added
+      // by `auth.atproto` below) instead of by a secret. So it is always
+      // offered, and it is the reason a deployment with no OAuth apps
+      // registered anywhere can still accept requests — from readers who have a
+      // Bluesky account, proved as strongly as any of the others.
+      bluesky: {
+        clientName: 'Dorean Press',
+        redirectUris: ['/verify/bluesky'],
+        // Needed for the profile itself. Without it the callback carries a DID
+        // and nothing else — no name, no handle, no avatar — and a sponsor
+        // would be shown an opaque identifier to judge.
+        scope: ['transition:generic']
+      }
     },
     public: {
       siteUrl: 'http://localhost:3000',
@@ -72,6 +87,13 @@ export default defineNuxtConfig({
   },
 
   compatibilityDate: '2025-01-15',
+
+  // Serves the atproto client-metadata document and registers the Bluesky
+  // handler. Without it `defineOAuthBlueskyEventHandler` is not imported and the
+  // metadata URL 404s, which reads at the provider as a misconfigured client.
+  auth: {
+    atproto: true
+  },
 
   eslint: {
     config: {

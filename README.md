@@ -101,7 +101,6 @@ server/utils/stripe.ts         Stripe client
 server/utils/lulu.ts           Lulu Print API client (OAuth + mock fallback)
 server/utils/requests.ts       Pay-it-forward datastore (Netlify DB / Neon)
 server/routes/verify/*         Sign-in challenge: prove an account you can log into
-server/utils/accountLookup.ts  Public lookup: find an account somebody has named
 server/api/checkout.post.ts    Create Stripe Checkout session (server-priced)
 server/api/requests/*          Create / list / sponsor book requests
 server/api/stripe/webhook.post Fulfil orders + sponsorships via Lulu

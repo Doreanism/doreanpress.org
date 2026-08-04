@@ -131,10 +131,21 @@ export async function readProofs(event: H3Event): Promise<IdentityProof[]> {
   const held = session.proofs ?? []
   if (held.length === 0) return []
 
+  // Nothing short of a signed-in account is honoured, whatever is in the cookie.
+  //
+  // Issuing already guarantees this — `completeChallenge` is the only way a
+  // proof is minted and it stamps `control` itself — so this is about the twenty
+  // minutes after the weaker routes were withdrawn, when a reader could still be
+  // holding a sealed, unexpired, perfectly valid proof of an account they merely
+  // named. Refusing it here rather than at each of the four places a proof is
+  // spent means there is one answer to "what counts", and it does not depend on
+  // remembering to ask.
+  const proved = held.filter(p => p?.identity?.confirmation === 'control')
+
   // Each id is checked, not just the first: proofs end one at a time, so a set
   // can hold a spent one beside live ones.
   const live = await Promise.all(
-    held.map(async proof => (proof?.id && !(await isSpent(proof.id)) ? proof : null))
+    proved.map(async proof => (proof?.id && !(await isSpent(proof.id)) ? proof : null))
   )
   return live.filter((p): p is IdentityProof => p !== null)
 }

@@ -12,6 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@atproto/api": "^0.13.35",
+    "@atproto/oauth-client-node": "^0.2.24",
     "@iconify-json/lucide": "^1.2.114",
     "@iconify-json/simple-icons": "^1.2.86",
     "@netlify/neon": "^0.1.2",
