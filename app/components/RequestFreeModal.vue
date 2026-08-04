@@ -35,6 +35,22 @@ const attached = computed(() => byStrength(identities.value))
 /** Room for another, or the picker stands down and says why. */
 const canAttachMore = computed(() => identities.value.length < MAX_ATTACHED)
 
+/**
+ * How much of the allowance is used, once any of it is.
+ *
+ * Shown from the first profile onward rather than only at the ceiling, so the
+ * limit is something a reader is working within rather than something they run
+ * into. Before that the picker's own copy states it — see the `limit` prop —
+ * and saying it twice on an empty form would be nagging.
+ */
+const attachedCount = computed(() => {
+  const used = identities.value.length
+  const left = MAX_ATTACHED - used
+  return left > 0
+    ? `${used} of ${MAX_ATTACHED} profiles attached — room for ${left} more.`
+    : `${used} of ${MAX_ATTACHED} profiles attached, which is as many as one request can carry.`
+})
+
 const proved = (identity: RequesterIdentity) => identity.confirmation === 'control'
 const told = (identity: RequesterIdentity) => identity.confirmation === 'claimed'
 
@@ -264,6 +280,13 @@ async function submit() {
         -->
         <USeparator label="Your public accounts" />
 
+        <p
+          v-if="attached.length"
+          class="text-xs text-dimmed"
+        >
+          {{ attachedCount }}
+        </p>
+
         <!--
           Every account attached, each saying what the board will say about it,
           in the same words — so posting holds no surprise about how the request
@@ -336,13 +359,13 @@ async function submit() {
           v-if="canAttachMore"
           :redirect="challengeRedirect"
           :adding="attached.length > 0"
+          :limit="MAX_ATTACHED"
         />
         <p
           v-else
           class="text-xs text-dimmed"
         >
-          That's {{ MAX_ATTACHED }} profiles — as many as one request can carry. Remove one
-          to attach a different one.
+          Remove one to attach a different one.
         </p>
 
         <USeparator label="Why you'd like them" />

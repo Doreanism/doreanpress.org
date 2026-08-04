@@ -46,9 +46,29 @@ const props = withDefaults(defineProps<{
    * then; repeating it above every extra profile would be nagging.
    */
   adding?: boolean
+  /**
+   * How many profiles the thing being attached to can carry, where there is a
+   * limit — so the allowance is stated before the reader starts rather than
+   * discovered by hitting it.
+   *
+   * Left undefined when the reader is proving one particular account instead of
+   * building a set, as on the withdraw page: a number there would answer a
+   * question nobody asked, and imply they should attach four to take one
+   * request down.
+   */
+  limit?: number
 }>(), { adding: false })
 
 const emit = defineEmits<{ confirmed: [RequesterIdentity] }>()
+
+/**
+ * The invitation to attach more than one, with the ceiling named where there is
+ * one. Said as an allowance rather than a restriction: the number is here to
+ * tell a reader how much room they have, not to warn them off using it.
+ */
+const allowance = computed(() => props.limit
+  ? `You can attach up to ${props.limit} profiles — several together say more than any one of them alone.`
+  : 'You can attach more than one — several profiles together say more than any of them alone.')
 
 const route = useRoute()
 const { data: providers } = await useFetch<{
@@ -200,8 +220,8 @@ async function confirm() {
         </p>
         <p class="text-muted">
           A sponsor is a stranger paying for your books out of their own pocket. A public
-          account beside your request lets them see who they're giving to. You can attach
-          more than one — several profiles together say more than any of them alone.
+          account beside your request lets them see who they're giving to.
+          {{ allowance }}
         </p>
         <p class="text-muted">
           Your name, photo and profile link appear on the board. Your address, email and
