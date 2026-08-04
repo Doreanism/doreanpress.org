@@ -8,6 +8,7 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
+    "lulu:prices": "node --env-file-if-exists=.env scripts/lulu-prices.ts",
     "typecheck": "nuxt typecheck",
     "test": "vitest run"
   },

@@ -74,6 +74,26 @@ Use the printed `whsec_…` as `NUXT_STRIPE_WEBHOOK_SECRET`. Fulfilment (Lulu pr
 job creation) happens in `server/api/stripe/webhook.post.ts` on
 `checkout.session.completed`.
 
+### What Lulu charges
+
+The catalog's prices are typed by hand. To see what a copy really costs to
+print:
+
+```bash
+npm run lulu:prices
+npm run lulu:prices -- --country=GB --postcode=SW1A1AA --level=GROUND --qty=5
+```
+
+`scripts/lulu-prices.ts` quotes every title through the site's own Lulu client
+and prints the print cost, the shipping for that destination, and how far each
+`priceCents` in `shared/catalog.ts` has drifted from it. It only reads — no
+print job is created. Without real credentials it quotes the mock and says so
+in large letters; those numbers are invented and must not be pasted into the
+catalog.
+
+Shipping and tax depend on the destination, so a quote is only true for the
+address it was asked about — a single flat rate cannot be right everywhere.
+
 ### Lulu webhook
 
 `server/api/lulu/webhook.post.ts` receives print-job status changes, writes
@@ -100,6 +120,7 @@ app/components/                AppLogo, BookCard, RequestFreeModal
 server/utils/stripe.ts         Stripe client
 server/utils/lulu.ts           Lulu Print API client (OAuth + mock fallback)
 server/utils/requests.ts       Pay-it-forward datastore (Netlify DB / Neon)
+scripts/lulu-prices.ts         Ask Lulu what each title costs to print
 server/routes/verify/*         Sign-in challenge: prove an account you can log into
 server/api/checkout.post.ts    Create Stripe Checkout session (server-priced)
 server/api/requests/*          Create / list / sponsor book requests
