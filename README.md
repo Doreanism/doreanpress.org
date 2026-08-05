@@ -81,18 +81,27 @@ print:
 
 ```bash
 npm run lulu:prices
-npm run lulu:prices -- --country=GB --postcode=SW1A1AA --level=GROUND --qty=5
+npm run lulu:prices -- --country=GB --postcode=SW1A1AA --level=EXPEDITED --qty=5
 ```
 
 `scripts/lulu-prices.ts` quotes every title through the site's own Lulu client
-and prints the print cost, the shipping for that destination, and how far each
-`priceCents` in `shared/catalog.ts` has drifted from it. It only reads — no
-print job is created. Without real credentials it quotes the mock and says so
-in large letters; those numbers are invented and must not be pasted into the
-catalog.
+and prints the per-copy print cost, Lulu's per-order fulfilment fee, the
+shipping for that destination, and how far each `priceCents` in
+`shared/catalog.ts` has drifted from it. It only reads — no print job is
+created. Without real credentials it quotes the mock and says so in large
+letters; those numbers are invented and must not be pasted into the catalog.
 
-Shipping and tax depend on the destination, so a quote is only true for the
-address it was asked about — a single flat rate cannot be right everywhere.
+Every figure is **excluding tax**, on purpose. Lulu adds the destination's
+sales tax to the quote, and that is the buyer's, not a cost of the book — a
+Springfield address adds 10.25% that an Oregon one does not. Comparing a
+tax-inclusive quote against `priceCents` measures the destination, not margin.
+
+Shipping is not flat: it scales with the number of copies, and the levels
+available depend on the POD package. `GROUND` returns "no shipping option
+found" for all three of the catalog's packages, so the working levels are
+`MAIL`, `PRIORITY_MAIL`, `EXPEDITED` and `EXPRESS`. A quote is only true for
+the address and quantity it was asked about — one flat rate cannot be right
+everywhere.
 
 ### Lulu webhook
 

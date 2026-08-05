@@ -90,20 +90,36 @@ const pad = (s: string, width: number) => s.length > width ? `${s.slice(0, width
 /** The slice of Lulu's cost-calculation response this script reads. */
 interface CostResponse {
   currency?: string
+  total_cost_excl_tax?: string
   total_cost_incl_tax?: string
-  shipping_cost?: { total_cost_incl_tax?: string }
-  line_item_costs?: { total_cost_incl_tax?: string }[]
+  total_tax?: string
+  shipping_cost?: { total_cost_excl_tax?: string, total_cost_incl_tax?: string }
+  fulfillment_cost?: { total_cost_excl_tax?: string }
+  line_item_costs?: {
+    total_cost_excl_tax?: string
+    total_cost_incl_tax?: string
+    /** Per-copy print cost, excl. tax — what a catalog price has to cover. */
+    unit_tier_cost?: string
+  }[]
 }
 
+// Everything below is excl. tax on purpose. Lulu's tax is the destination's
+// sales tax on this quote, not a cost of the book: a Springfield address adds
+// 10.25% that an Oregon one doesn't. Comparing a tax-inclusive quote against
+// `priceCents` measures Illinois, not margin.
 interface Quote {
   slug: string
   title: string
   pageCount: number
   currency: string
-  /** Print cost for `quantity` copies, incl. tax. */
+  /** Print cost per copy, excl. tax. */
   print?: number
-  /** Shipping for the whole (single-title) order, incl. tax. */
+  /** Lulu's per-order fulfilment fee, excl. tax — charged once, not per copy. */
+  fulfillment?: number
+  /** Shipping for the whole (single-title) order, excl. tax. */
   shipping?: number
+  /** Destination sales tax on the whole quote — varies by address. */
+  tax?: number
   total?: number
   error?: string
 }
@@ -121,13 +137,21 @@ async function quote(book: typeof catalog[number]): Promise<Quote> {
       shippingLevel: level
     }) as CostResponse
 
-    const shipping = money(res.shipping_cost?.total_cost_incl_tax)
-    const total = money(res.total_cost_incl_tax)
-    // The mock answers with a total and nothing itemised; real Lulu itemises.
-    const print = money(res.line_item_costs?.[0]?.total_cost_incl_tax)
-      ?? (total !== undefined && shipping !== undefined ? total - shipping : undefined)
+    // The mock carries no tax, so its incl-tax fields stand in for excl-tax.
+    const shipping = money(res.shipping_cost?.total_cost_excl_tax)
+      ?? money(res.shipping_cost?.total_cost_incl_tax)
+    const fulfillment = money(res.fulfillment_cost?.total_cost_excl_tax)
+    const total = money(res.total_cost_excl_tax) ?? money(res.total_cost_incl_tax)
+    const tax = money(res.total_tax)
+    // Real Lulu gives a per-copy figure directly; the mock answers with a total
+    // and nothing itemised, so fall back to dividing the line total.
+    const lineTotal = money(res.line_item_costs?.[0]?.total_cost_excl_tax)
+      ?? money(res.line_item_costs?.[0]?.total_cost_incl_tax)
+    const print = money(res.line_item_costs?.[0]?.unit_tier_cost)
+      ?? (lineTotal !== undefined ? lineTotal / quantity : undefined)
+      ?? (total !== undefined && shipping !== undefined ? (total - shipping) / quantity : undefined)
 
-    return { ...base, currency: res.currency || 'USD', print, shipping, total }
+    return { ...base, currency: res.currency || 'USD', print, fulfillment, shipping, tax, total }
   } catch (err) {
     // ofetch hangs Lulu's own explanation (bad pod package id, page count out of
     // range for the binding) on `.data` — far more useful than the status line.
@@ -148,8 +172,8 @@ for (const book of books) {
   quotes.push(await quote(book))
 }
 
-console.log(`${pad('title', 32)}${'pages'.padStart(6)}${'print'.padStart(10)}${'ship'.padStart(9)}${'total'.padStart(9)}${'catalog'.padStart(10)}`)
-console.log('─'.repeat(76))
+console.log(`${pad('title', 32)}${'pages'.padStart(6)}${'print/ea'.padStart(10)}${'fulfil'.padStart(9)}${'ship'.padStart(9)}${'total'.padStart(9)}${'catalog'.padStart(10)}`)
+console.log('─'.repeat(85))
 
 for (const q of quotes) {
   const book = catalog.find(b => b.slug === q.slug)!
@@ -161,6 +185,7 @@ for (const q of quotes) {
     pad(q.title, 32)
     + String(q.pageCount).padStart(6)
     + dollars(q.print).padStart(10)
+    + dollars(q.fulfillment).padStart(9)
     + dollars(q.shipping).padStart(9)
     + dollars(q.total).padStart(9)
     + formatPrice(book.priceCents, book.currency).padStart(10)
@@ -168,27 +193,34 @@ for (const q of quotes) {
   )
 }
 
+console.log('\nAll figures exclude tax. Lulu adds the destination\'s sales tax on top')
+console.log('(this quote: ' + dollars(quotes.find(q => q.tax !== undefined)?.tax) + '), which is the buyer\'s, not a cost of the book.')
+
 const priced = quotes.filter(q => q.print !== undefined)
 if (priced.length > 0) {
   console.log(`\nPrint cost per copy, as catalog \`priceCents\` — shipping is charged separately:\n`)
   for (const q of priced) {
     const book = catalog.find(b => b.slug === q.slug)!
-    const perCopy = Math.ceil((q.print! / quantity) * 100)
+    const perCopy = Math.ceil(q.print! * 100)
     const note = perCopy === book.priceCents
       ? 'unchanged'
       : `now ${book.priceCents}, ${perCopy > book.priceCents ? 'under-priced by' : 'over-priced by'} ${formatPrice(Math.abs(perCopy - book.priceCents))}`
     console.log(`  ${pad(q.slug, 30)} priceCents: ${String(perCopy).padStart(5)}   (${note})`)
   }
-  console.log('\n  At cost is the floor, not the price: Stripe keeps roughly 2.9% + 30¢ of')
-  console.log('  every charge, so a book sold at exactly this loses money on each sale.')
+  const fulfillment = priced.find(q => q.fulfillment !== undefined)?.fulfillment
+  console.log('\n  At cost is the floor, not the price. Stripe keeps roughly 2.9% + 30¢ of')
+  console.log('  every charge, and the figures above are print alone — Lulu also bills')
+  console.log(`  ${dollars(fulfillment)} fulfilment per order plus shipping, so a book sold at exactly`)
+  console.log('  this loses money on each sale.')
 }
 
 const shipping = priced.find(q => q.shipping !== undefined)?.shipping
 if (shipping !== undefined) {
-  console.log(`\nShipping quoted at ${dollars(shipping)} for this order. The site charges flat rates:`)
+  console.log(`\nShipping quoted at ${dollars(shipping)} for ${quantity} cop${quantity === 1 ? 'y' : 'ies'}. It scales with`)
+  console.log('the order, so a flat rate drifts further the more copies ship. The site charges:')
   console.log('  $4.99 standard / $12.99 expedited   server/api/checkout.post.ts')
   console.log('  $4.99 per sponsored request         shared/catalog.ts SPONSOR_SHIPPING_CENTS')
-  console.log('  Re-run with --level and --country to see how far those drift.')
+  console.log('  Re-run with --level, --country and --qty to see how far those drift.')
 }
 
 if (args.has('json')) {
