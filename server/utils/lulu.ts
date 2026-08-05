@@ -112,14 +112,22 @@ export function isLuluMocked(): boolean {
 /**
  * Verify the `Lulu-HMAC-SHA256` header on a webhook delivery: a hex
  * HMAC-SHA256 of the raw request body, keyed with the API client secret.
- * Without a configured secret (mock mode) verification is skipped so the
- * endpoint stays testable locally.
+ *
+ * With no secret configured there is nothing to verify against. Locally that
+ * is the ordinary state and skipping keeps the endpoint testable. Deployed it
+ * means the endpoint would take anyone's word that a job had shipped — and
+ * this handler marks requests fulfilled and emails readers tracking links —
+ * so a deployment without a secret refuses deliveries instead.
  */
 export function verifyLuluWebhookSignature(rawBody: string, signature: string | undefined): boolean {
   const cfg = resolveConfig()
   if (!cfg.clientSecret) {
-    console.warn('[lulu webhook] no client secret configured — skipping signature verification (dev only).')
-    return true
+    if (import.meta.dev) {
+      console.warn('[lulu webhook] no client secret configured — skipping signature verification (dev only).')
+      return true
+    }
+    console.error('[lulu webhook] no client secret configured — refusing delivery. Set NUXT_LULU_CLIENT_SECRET.')
+    return false
   }
   if (!signature) return false
   const expected = Buffer.from(createHmac('sha256', cfg.clientSecret).update(rawBody).digest('hex'))
