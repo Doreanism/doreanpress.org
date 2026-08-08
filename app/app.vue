@@ -5,23 +5,22 @@ const { count } = useCart()
 // failure surfaces as a flag on the return URL rather than a rejected fetch.
 useChallengeFeedback()
 
-// Reads "Orders" once there is somebody to have orders, "Sign in" before that.
-// Both go to the same page, which asks for an address when it needs one — a
-// separate /sign-in route would be a dead end for anyone already signed in.
+// The account sits with the cart in the top right, not in the nav. Both are
+// about *you* rather than about the press — what you are buying, what you have
+// ordered — and the nav is the site's own sections. Keeping them together also
+// means the signed-in state is in one predictable corner instead of moving
+// around inside a list whose length changes with it.
 const { signedIn, refresh } = useSignedIn()
-// Resolved during SSR so the header renders the right word first time, rather
-// than saying "Sign in" to a signed-in reader until the client catches up.
+// Resolved during SSR so the header renders the right icon first time, rather
+// than showing a signed-in reader the signed-out one until the client catches up.
 await useAsyncData('signed-in', () => refresh())
 
-const nav = computed(() => [
+const nav = [
   { label: 'Home', to: '/', icon: 'i-lucide-home' },
   { label: 'Catalog', to: '/catalog', icon: 'i-lucide-library' },
   { label: 'Give a Book', to: '/give', icon: 'i-lucide-gift' },
-  { label: 'About', to: '/about', icon: 'i-lucide-heart-handshake' },
-  signedIn.value
-    ? { label: 'Orders', to: '/orders', icon: 'i-lucide-package' }
-    : { label: 'Sign in', to: '/orders', icon: 'i-lucide-log-in' }
-])
+  { label: 'About', to: '/about', icon: 'i-lucide-heart-handshake' }
+]
 
 const title = 'Dorean Press'
 const description = 'A publishing ministry recovering the conviction that the gospel is freely given. Books on the church and the commercialization of Christianity, printed on demand and sold at honest cost.'
@@ -60,6 +59,21 @@ useSeoMeta({
 
       <template #right>
         <AppSettings />
+
+        <!--
+          One button either way, so the corner never reflows: signed out it is a
+          way in, signed in it is the way to your orders. The label is on
+          `aria-label` rather than on screen because its neighbours are icons
+          too — a lone worded button here would read as the important one.
+        -->
+        <UButton
+          to="/orders"
+          :icon="signedIn ? 'i-lucide-circle-user-round' : 'i-lucide-log-in'"
+          color="neutral"
+          variant="ghost"
+          :aria-label="signedIn ? `Orders — signed in as ${signedIn.email}` : 'Sign in'"
+          :title="signedIn ? signedIn.email : 'Sign in'"
+        />
 
         <UChip
           :text="count"

@@ -14,8 +14,16 @@ export function useSignedIn() {
   const signedIn = useState<SignedIn | null>('signed-in', () => null)
   const pending = useState('signed-in-pending', () => false)
 
+  // `useRequestFetch`, not bare `$fetch`. On the server a plain `$fetch` to our
+  // own API sends no cookies — it is a fresh call, not a continuation of the
+  // reader's request — so `/api/auth/me` answers "nobody", and the header
+  // renders "Sign in" to somebody who is signed in until the client corrects it.
+  // This forwards the incoming request's headers, so SSR sees who is actually
+  // there. Client-side it is ordinary `$fetch`.
+  const request = useRequestFetch()
+
   async function refresh() {
-    const res = await $fetch<{ signedIn: SignedIn | null }>('/api/auth/me')
+    const res = await request<{ signedIn: SignedIn | null }>('/api/auth/me')
     signedIn.value = res.signedIn
     return signedIn.value
   }

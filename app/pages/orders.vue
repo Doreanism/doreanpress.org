@@ -29,10 +29,15 @@ interface OrderLine {
   requesters?: unknown[]
 }
 
+// Same reason as in `useSignedIn`: on the server a bare `$fetch` carries no
+// cookies, so `/api/orders` would answer 401 during SSR and the page would
+// render empty before the client fetched it again properly.
+const request = useRequestFetch()
+
 const { data: orders, refresh: refreshOrders } = await useAsyncData(
   'orders',
   () => signedIn.value
-    ? $fetch<{
+    ? request<{
         email: string
         requested: OrderLine[]
         sponsored: OrderLine[]

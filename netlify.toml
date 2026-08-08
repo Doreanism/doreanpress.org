@@ -7,5 +7,5 @@
 
 # Nitro auto-detects the Netlify environment and builds with its `netlify`
 # (SSR) preset — server routes run as a Netlify Function. Set the runtime
-# environment variables (NUXT_PUBLIC_SITE_URL, Stripe/Lulu/Resend keys, etc.)
+# environment variables (NUXT_PUBLIC_SITE_URL, Stripe/Lulu/Brevo keys, etc.)
 # in the Netlify dashboard; see .env.example for the full list.

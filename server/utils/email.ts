@@ -1,6 +1,13 @@
-// Transactional email via Resend (https://resend.com) over its HTTP API — no
-// SDK dependency. When `resendApiKey` is unset, emails are logged to the console
-// instead of sent, so the pay-it-forward loop works without credentials.
+// Transactional email, by one of three routes, in this order:
+//
+//   1. `smtpUrl` set        → deliver over SMTP. Locally that is MailHog, which
+//                             catches mail instead of sending it. Checked first
+//                             so a stray API key can't leak a real send in dev.
+//   2. `brevoApiKey` set    → Brevo's HTTP API (https://brevo.com). HTTP rather
+//                             than Brevo's SMTP relay because serverless hosts
+//                             are unreliable about outbound SMTP ports.
+//   3. neither              → log to the console, so the pay-it-forward loop
+//                             works with no credentials at all.
 
 import { summarizeTitles } from '#shared/catalog'
 import { byStrength, describeIdentity, type RequesterIdentity } from '#shared/identity'
@@ -14,20 +21,40 @@ export interface EmailMessage {
 
 interface EmailConfig {
   apiKey: string
-  from: string
+  smtpUrl: string
+  sender: { email: string, name?: string }
   pressEmail: string
   mock: boolean
 }
 
+/**
+ * Split a `Name <addr@host>` sender into the two fields Brevo wants. The
+ * configured value stays one string because that is what an operator types
+ * into an env var; a bare address with no display name is equally valid.
+ */
+function parseSender(from: string): { email: string, name?: string } {
+  const match = from.match(/^\s*(.*?)\s*<([^>]+)>\s*$/)
+  if (!match) return { email: from.trim() }
+  const name = match[1]!.replace(/^"|"$/g, '').trim()
+  return name ? { email: match[2]!.trim(), name } : { email: match[2]!.trim() }
+}
+
 function resolveConfig(): EmailConfig {
   const cfg = useRuntimeConfig()
-  const apiKey = cfg.resendApiKey || ''
+  const apiKey = cfg.brevoApiKey || ''
+  const smtpUrl = cfg.smtpUrl || ''
   return {
     apiKey,
-    from: cfg.fromEmail || 'Dorean Press <hello@doreanpress.org>',
+    smtpUrl,
+    sender: parseSender(cfg.fromEmail || 'Dorean Press <hello@doreanpress.org>'),
     pressEmail: cfg.pressEmail || '',
-    mock: !apiKey
+    mock: !apiKey && !smtpUrl
   }
+}
+
+/** `Name <addr>` again, the form SMTP headers want. */
+function senderHeader(sender: { email: string, name?: string }): string {
+  return sender.name ? `${sender.name} <${sender.email}>` : sender.email
 }
 
 export function pressEmailAddress(): string {
@@ -45,18 +72,32 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
   }
 
   try {
-    await $fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${cfg.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: {
-        from: cfg.from,
+    if (cfg.smtpUrl) {
+      // Imported here rather than at module scope so the dependency is only
+      // pulled in when a local catcher is actually configured.
+      const { createTransport } = await import('nodemailer')
+      await createTransport(cfg.smtpUrl).sendMail({
+        from: senderHeader(cfg.sender),
         to: message.to,
         subject: message.subject,
         html: message.html,
         text: message.text
+      })
+      return
+    }
+
+    await $fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': cfg.apiKey,
+        'Content-Type': 'application/json'
+      },
+      body: {
+        sender: cfg.sender,
+        to: [{ email: message.to }],
+        subject: message.subject,
+        htmlContent: message.html,
+        textContent: message.text
       }
     })
   } catch (err) {

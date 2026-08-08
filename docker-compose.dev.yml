@@ -37,5 +37,15 @@ services:
       db:
         condition: service_healthy
 
+  # Catches every outgoing email locally instead of delivering it. Set
+  # NUXT_SMTP_URL (see .env.example) and read what the app sent at
+  # http://localhost:8025 — the templates render as a reader would see them,
+  # which console output can't show.
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - "1025:1025" # SMTP, where the app delivers
+      - "8025:8025" # web UI, where you read it
+
 volumes:
   dorean-pgdata:

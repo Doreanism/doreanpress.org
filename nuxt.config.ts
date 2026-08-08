@@ -26,9 +26,12 @@ export default defineNuxtConfig({
       // mocked responses so the site works without real keys.
       mock: 'true'
     },
-    // Transactional email (Resend). When the key is missing, emails are logged
+    // Transactional email (Brevo). When the key is missing, emails are logged
     // to the console instead of sent (mock mode).
-    resendApiKey: '',
+    brevoApiKey: '',
+    // Local capture: an SMTP URL (MailHog, smtp://localhost:1025) takes
+    // precedence over the API key, so dev never delivers to a real inbox.
+    smtpUrl: '',
     fromEmail: 'Dorean Press <hello@doreanpress.org>',
     // Optional: notify the press when a new request is posted.
     pressEmail: '',
