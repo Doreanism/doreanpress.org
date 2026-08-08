@@ -17,6 +17,7 @@
 export type IdentityProvider
   = | 'x' | 'facebook' | 'linkedin' | 'twitch' | 'tiktok'
     | 'github' | 'gitlab' | 'bluesky' | 'mastodon'
+    | 'youface'
 
 /**
  * What a completed check actually establishes.
@@ -261,7 +262,50 @@ export const IDENTITY_PROVIDERS: Record<IdentityProvider, ProviderMeta> = {
     icon: 'i-simple-icons-mastodon',
     linkable: true,
     legacy: true
+  },
+  // Not a real network — see DEV_ONLY_PROVIDERS.
+  youface: {
+    label: 'YouFace',
+    icon: 'i-lucide-venetian-mask',
+    linkable: false
   }
+}
+
+/**
+ * Providers that exist only on a developer's machine.
+ *
+ * YouFace is a social network that does not exist. Its button attaches a made-up
+ * profile on the spot, with no provider, no round trip and nothing proved — so
+ * the request form, the board, the four-profile allowance and the emails can all
+ * be worked on without signing into anything real.
+ *
+ * The paragraph above `ChallengeProvider` used to say there was deliberately no
+ * stand-in, on the grounds that a challenge which can be satisfied without an
+ * account is not a challenge. That reasoning is still exactly right, and it is
+ * why this is fenced rather than merely discouraged: `configuredProviders` drops
+ * it outside dev, and `server/routes/verify/youface.get.ts` answers 404 there.
+ * Both, because either alone is one edit away from shipping a button that mints
+ * proofs — and `completeChallenge` stamps `control` by construction, so a forged
+ * YouFace proof would be indistinguishable from a real sign-in to every rule
+ * that leans on one.
+ *
+ * Worth knowing rather than assuming: the route is still compiled into a
+ * production bundle. It is refused at runtime by a build-time-false branch, not
+ * removed. Nothing here relies on tree-shaking, and neither should you.
+ *
+ * If you are reading this because it appeared in production: that is the bug.
+ */
+export type DevOnlyProvider = 'youface'
+
+export const DEV_ONLY_PROVIDERS: readonly DevOnlyProvider[] = ['youface']
+
+/**
+ * A type guard rather than a boolean, so that narrowing it away is what lets the
+ * caller reach the OAuth credentials at all: there is no `oauth.youface` to
+ * configure, and TypeScript says so if the dev-only branch is ever dropped.
+ */
+export function isDevOnlyProvider(provider: string): provider is DevOnlyProvider {
+  return (DEV_ONLY_PROVIDERS as readonly string[]).includes(provider)
 }
 
 /**
@@ -274,16 +318,23 @@ export const IDENTITY_PROVIDERS: Record<IdentityProvider, ProviderMeta> = {
  * handles would be to read: an account we cannot prove is an account a sponsor
  * would be trusting on the reader's say-so.
  *
- * Every one is a real round trip, in dev exactly as in production. There is
- * deliberately no stand-in: a challenge that can be satisfied without an account
- * is not a challenge, and one that behaves differently on a developer's machine
- * is not the thing being tested.
+ * Every one here is a real round trip, in production and in dev alike. The one
+ * exception is fenced off in `DEV_ONLY_PROVIDERS` and never reaches a deployed
+ * site: a challenge that can be satisfied without an account is not a challenge,
+ * so the stand-in is confined to the machine it is a convenience on.
  */
 export type ChallengeProvider = Exclude<IdentityProvider, 'mastodon'>
 
-/** In the order offered, which is the order they were added. */
+/**
+ * In the order offered, which is the order they were added.
+ *
+ * YouFace is last and is not offered outside dev — `configuredProviders` filters
+ * it out there, so its presence in this list is not the thing that decides
+ * whether a reader is ever shown it.
+ */
 export const CHALLENGE_PROVIDERS: ChallengeProvider[] = [
-  'x', 'facebook', 'linkedin', 'github', 'twitch', 'tiktok', 'gitlab', 'bluesky'
+  'x', 'facebook', 'linkedin', 'github', 'twitch', 'tiktok', 'gitlab', 'bluesky',
+  'youface'
 ]
 
 /**

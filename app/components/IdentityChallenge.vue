@@ -124,7 +124,10 @@ const BRAND: Partial<Record<IdentityProvider, string>> = {
   tiktok: 'text-black dark:text-white',
   github: 'text-black dark:text-white',
   bluesky: 'text-[#0285FF]',
-  gitlab: 'text-[#FC6D26]'
+  gitlab: 'text-[#FC6D26]',
+  // Not a brand — a dev-only stand-in, coloured so it never reads as one of the
+  // real buttons beside it. It cannot appear outside dev; see DEV_ONLY_PROVIDERS.
+  youface: 'text-amber-500'
 }
 
 /**

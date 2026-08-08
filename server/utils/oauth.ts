@@ -15,7 +15,7 @@ import type {
   IdentityProvider,
   RequesterIdentity
 } from '#shared/identity'
-import { CHALLENGE_PROVIDERS } from '#shared/identity'
+import { CHALLENGE_PROVIDERS, isDevOnlyProvider } from '#shared/identity'
 
 /**
  * Holds the page the reader left, across the round trip to the provider. A
@@ -110,6 +110,13 @@ const NO_CREDENTIALS_NEEDED = new Set<ChallengeProvider>(['bluesky'])
 export function configuredProviders(event?: H3Event): ChallengeProvider[] {
   const oauth = useRuntimeConfig(event).oauth
   return CHALLENGE_PROVIDERS.filter((p) => {
+    // The stand-in, and the gate that keeps it a stand-in. Note what this does
+    // and does not do: `import.meta.dev` is false in a deployed build, so the
+    // provider is never offered there — but its route still ships in the bundle
+    // and is refused at runtime rather than absent. Verified against a real
+    // production build: the list comes back without it and /verify/youface 404s.
+    // See DEV_ONLY_PROVIDERS.
+    if (isDevOnlyProvider(p)) return Boolean(import.meta.dev)
     if (NO_CREDENTIALS_NEEDED.has(p)) return true
     const config = oauth[p] as { clientId?: string, clientKey?: string, clientSecret?: string } | undefined
     return Boolean((config?.clientId || config?.clientKey) && config?.clientSecret)
