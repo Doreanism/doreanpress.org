@@ -29,9 +29,12 @@ export default defineNuxtConfig({
     // Transactional email (Brevo). When the key is missing, emails are logged
     // to the console instead of sent (mock mode).
     brevoApiKey: '',
-    // Local capture: an SMTP URL (MailHog, smtp://localhost:1025) takes
+    // Local capture: an SMTP URL (Mailpit, smtp://localhost:1025) takes
     // precedence over the API key, so dev never delivers to a real inbox.
     smtpUrl: '',
+    // When true, Brevo requests carry `X-Sib-Sandbox: drop` — validated in full
+    // by Brevo, then discarded. Lets a real key be exercised without delivering.
+    brevoSandbox: 'false',
     fromEmail: 'Dorean Press <hello@doreanpress.org>',
     // Optional: notify the press when a new request is posted.
     pressEmail: '',

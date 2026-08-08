@@ -1,6 +1,6 @@
 // Transactional email, by one of three routes, in this order:
 //
-//   1. `smtpUrl` set        → deliver over SMTP. Locally that is MailHog, which
+//   1. `smtpUrl` set        → deliver over SMTP. Locally that is Mailpit, which
 //                             catches mail instead of sending it. Checked first
 //                             so a stray API key can't leak a real send in dev.
 //   2. `brevoApiKey` set    → Brevo's HTTP API (https://brevo.com). HTTP rather
@@ -8,6 +8,11 @@
 //                             are unreliable about outbound SMTP ports.
 //   3. neither              → log to the console, so the pay-it-forward loop
 //                             works with no credentials at all.
+//
+// The two routes prove different halves. Mailpit shows what a reader would
+// receive but never speaks to Brevo; `brevoSandbox` sends a real, fully
+// authenticated Brevo request that Brevo validates and then drops, proving the
+// integration while showing nothing. Neither substitutes for the other.
 
 import { summarizeTitles } from '#shared/catalog'
 import { byStrength, describeIdentity, type RequesterIdentity } from '#shared/identity'
@@ -22,6 +27,7 @@ export interface EmailMessage {
 interface EmailConfig {
   apiKey: string
   smtpUrl: string
+  sandbox: boolean
   sender: { email: string, name?: string }
   pressEmail: string
   mock: boolean
@@ -46,6 +52,7 @@ function resolveConfig(): EmailConfig {
   return {
     apiKey,
     smtpUrl,
+    sandbox: String(cfg.brevoSandbox) === 'true',
     sender: parseSender(cfg.fromEmail || 'Dorean Press <hello@doreanpress.org>'),
     pressEmail: cfg.pressEmail || '',
     mock: !apiKey && !smtpUrl
@@ -90,7 +97,11 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
       method: 'POST',
       headers: {
         'api-key': cfg.apiKey,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        // Brevo checks the request in full and then drops it undelivered.
+        // Sandboxed sends are not logged in the dashboard either, so an empty
+        // Brevo log is the expected result here, not a sign of failure.
+        ...(cfg.sandbox ? { 'X-Sib-Sandbox': 'drop' } : {})
       },
       body: {
         sender: cfg.sender,

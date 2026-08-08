@@ -61,19 +61,35 @@ useSeoMeta({
         <AppSettings />
 
         <!--
-          One button either way, so the corner never reflows: signed out it is a
-          way in, signed in it is the way to your orders. The label is on
-          `aria-label` rather than on screen because its neighbours are icons
-          too — a lone worded button here would read as the important one.
+          The account, beside the cart. One button and one icon in both states:
+          it is the same place either way — your orders, which asks you to sign
+          in when it does not yet know you.
+
+          The icon does not change with the state, and that is deliberate. It
+          first drew a log-in arrow when signed out, which is a picture of an
+          action rather than of a thing, so the corner had no account icon in it
+          for anybody not already signed in — exactly when you are most looking
+          for one. A person is what this corner *is*; whether you are signed in
+          belongs in the label and the chip.
+
+          The label is on `aria-label` rather than on screen because its
+          neighbours are icons too, and a lone worded button here would read as
+          the important one.
         -->
-        <UButton
-          to="/orders"
-          :icon="signedIn ? 'i-lucide-circle-user-round' : 'i-lucide-log-in'"
-          color="neutral"
-          variant="ghost"
-          :aria-label="signedIn ? `Orders — signed in as ${signedIn.email}` : 'Sign in'"
-          :title="signedIn ? signedIn.email : 'Sign in'"
-        />
+        <UChip
+          :show="Boolean(signedIn)"
+          size="sm"
+          color="primary"
+        >
+          <UButton
+            to="/orders"
+            icon="i-lucide-circle-user-round"
+            color="neutral"
+            variant="ghost"
+            :aria-label="signedIn ? `Your orders — signed in as ${signedIn.email}` : 'Sign in to see your orders'"
+            :title="signedIn ? signedIn.email : 'Sign in'"
+          />
+        </UChip>
 
         <UChip
           :text="count"

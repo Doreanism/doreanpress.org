@@ -41,8 +41,16 @@ services:
   # NUXT_SMTP_URL (see .env.example) and read what the app sent at
   # http://localhost:8025 — the templates render as a reader would see them,
   # which console output can't show.
-  mailhog:
-    image: mailhog/mailhog:v1.0.1
+  #
+  # This proves the templates, not the Brevo integration: nothing here speaks to
+  # Brevo. Set NUXT_BREVO_SANDBOX=true to exercise that half (see .env.example).
+  mailpit:
+    image: axllent/mailpit:v1.30.7
+    environment:
+      # Accept whatever the app offers rather than rejecting unauthenticated
+      # SMTP, so NUXT_SMTP_URL needs no credentials in it.
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
     ports:
       - "1025:1025" # SMTP, where the app delivers
       - "8025:8025" # web UI, where you read it
