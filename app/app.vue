@@ -5,12 +5,23 @@ const { count } = useCart()
 // failure surfaces as a flag on the return URL rather than a rejected fetch.
 useChallengeFeedback()
 
-const nav = [
+// Reads "Orders" once there is somebody to have orders, "Sign in" before that.
+// Both go to the same page, which asks for an address when it needs one — a
+// separate /sign-in route would be a dead end for anyone already signed in.
+const { signedIn, refresh } = useSignedIn()
+// Resolved during SSR so the header renders the right word first time, rather
+// than saying "Sign in" to a signed-in reader until the client catches up.
+await useAsyncData('signed-in', () => refresh())
+
+const nav = computed(() => [
   { label: 'Home', to: '/', icon: 'i-lucide-home' },
   { label: 'Catalog', to: '/catalog', icon: 'i-lucide-library' },
   { label: 'Give a Book', to: '/give', icon: 'i-lucide-gift' },
-  { label: 'About', to: '/about', icon: 'i-lucide-heart-handshake' }
-]
+  { label: 'About', to: '/about', icon: 'i-lucide-heart-handshake' },
+  signedIn.value
+    ? { label: 'Orders', to: '/orders', icon: 'i-lucide-package' }
+    : { label: 'Sign in', to: '/orders', icon: 'i-lucide-log-in' }
+])
 
 const title = 'Dorean Press'
 const description = 'A publishing ministry recovering the conviction that the gospel is freely given. Books on the church and the commercialization of Christianity, printed on demand and sold at honest cost.'

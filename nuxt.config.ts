@@ -32,14 +32,19 @@ export default defineNuxtConfig({
     fromEmail: 'Dorean Press <hello@doreanpress.org>',
     // Optional: notify the press when a new request is posted.
     pressEmail: '',
-    // The sealed cookie holding a completed identity challenge. Short-lived on
-    // purpose: it is not a login, only a proof that has to survive the redirect
-    // back from the provider and then the minute or two it takes to fill in an
-    // address. The server clears it as soon as the action it was raised for
-    // lands, so this window is a backstop, not the normal lifetime.
+    // The sealed cookie. It carries two things with very different lifetimes:
+    // completed identity challenges, which are evidence of a moment at a
+    // provider and are worth twenty minutes, and a sign-in, which identifies an
+    // inbox and is meant to last.
+    //
+    // `maxAge` is the longer of the two, so it can no longer be read as the
+    // proof window — that is `PROOF_TTL_MS` in `server/utils/identityProof.ts`,
+    // checked against each proof's own `verifiedAt`. Shortening this again would
+    // not shorten a proof; lengthening it does not lengthen one either. Anything
+    // stored here must state its own expiry rather than inherit this one.
     session: {
       name: 'dorean-identity-proof',
-      maxAge: 60 * 20
+      maxAge: 60 * 60 * 24 * 30
     },
     // Public accounts a reader can prove they hold in order to post a free-book
     // request.

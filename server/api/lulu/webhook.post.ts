@@ -8,10 +8,48 @@ import { itemTitles } from '#shared/catalog'
 // full print-job object here on every status change, signed with an
 // HMAC-SHA256 of the body in the `Lulu-HMAC-SHA256` header.
 //
-// Sponsorship requests store their Lulu job id at fulfilment time, so status
-// changes are written back to the request (and the requester gets a tracking
-// email on SHIPPED). Direct store orders have no persisted record — those are
-// just logged.
+// Both kinds of order store their Lulu job id at fulfilment time, so a status
+// change is written back to whichever it belongs to and the person waiting gets
+// a tracking email on SHIPPED — the reader for a sponsored request, the buyer
+// for a catalog purchase. Purchases used to have no record to write back to.
+
+/**
+ * Write a status change onto a catalog purchase, mirroring what the request
+ * branch does — same duplicate guard, same tracking email on SHIPPED.
+ */
+async function updatePurchase(
+  jobId: string | number,
+  statusName: string,
+  job: LuluWebhookPayload['data']
+) {
+  const order = await findOrderByLuluJobId(jobId)
+  if (!order) {
+    console.info(`[lulu webhook] job ${jobId} → ${statusName} (no matching request or order).`)
+    return { received: true }
+  }
+
+  if (order.shippingStatus === statusName) {
+    return { received: true, duplicate: true }
+  }
+
+  const trackingUrl = statusName === 'SHIPPED'
+    ? job?.line_items?.flatMap(li => li.tracking_urls || []).find(Boolean)
+    : undefined
+
+  await updateOrderShipping(order.id, { shippingStatus: statusName, trackingUrl })
+  console.info(`[lulu webhook] order ${order.id} shipping status → ${statusName}.`)
+
+  if (statusName === 'SHIPPED') {
+    await sendEmail(requestShippedEmail({
+      to: order.email,
+      name: order.name,
+      titles: itemTitles(order.items),
+      trackingUrl
+    }))
+  }
+
+  return { received: true }
+}
 
 interface LuluWebhookPayload {
   topic?: string
@@ -54,8 +92,11 @@ export default defineEventHandler(async (event) => {
 
   const request = await findRequestByLuluJobId(jobId)
   if (!request) {
-    console.info(`[lulu webhook] job ${jobId} → ${statusName} (no matching request; likely a direct order).`)
-    return { received: true }
+    // A catalog purchase rather than a sponsored request. This branch used to
+    // log "likely a direct order" and drop it, because purchases were recorded
+    // nowhere to update — so the one person who paid their own money was the
+    // one person never told their book had shipped.
+    return updatePurchase(jobId, statusName, job)
   }
 
   if (request.shippingStatus === statusName) {

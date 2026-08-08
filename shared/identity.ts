@@ -92,8 +92,21 @@ export interface RequesterIdentity {
  *
  * Evidence that whoever holds it controlled `identity` at `verifiedAt` — and
  * nothing more. It is deliberately not a login: it is raised for one action,
- * stamped onto that action, and spent. There are no accounts on this site, no
- * signed-in state, and nothing to sign out of.
+ * stamped onto that action, and spent.
+ *
+ * There is now a login, and it is a different thing that lives in the same
+ * sealed cookie — signing in by a code mailed to an address, so a reader can be
+ * shown their own orders (`server/utils/signedIn.ts`). Keep the two apart:
+ *
+ *   a proof says a public account is yours. It is minted at the provider, worth
+ *   twenty minutes, and is what a stranger deciding whether to spend money on
+ *   you is shown.
+ *
+ *   a sign-in says an inbox is yours. It is worth weeks, and says nothing to
+ *   anybody but us — an email address is not evidence a giver can weigh.
+ *
+ * So being signed in never satisfies a check that wants a proof. Posting a
+ * request goes on requiring an attached account no matter who is signed in.
  *
  * A reader may hold several at once, one per account they have attached — see
  * `MAX_ATTACHED`. They accumulate rather than replacing each other, and each

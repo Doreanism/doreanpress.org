@@ -2,8 +2,14 @@
 //
 // The whole lifecycle is: a reader raises a challenge, the provider hands them
 // back, and the proof sits in a sealed cookie until it lapses or they discard
-// it. Nothing here logs anybody in — there is no account to be in, and a proof
-// that has ended is simply gone.
+// it. Nothing here logs anybody in, and a proof that has ended is simply gone.
+//
+// Logging in is `server/utils/signedIn.ts`, which shares this cookie and is not
+// this. A proof is evidence about a public account, aimed at a giver, and is
+// short because it asserts a moment. A sign-in is an inbox, aimed at us, and
+// lasts. Neither substitutes for the other, and the one place that could blur
+// them — `readProofs` — deliberately filters on `confirmation` and freshness so
+// that whatever else is in the cookie, only real proofs come out.
 //
 // A reader may attach several accounts to one request, so the cookie holds a
 // *set* of proofs rather than one. Checking a second account therefore adds to
@@ -40,9 +46,29 @@ function ensureSchema() {
   return schema
 }
 
-/** How long a proof can possibly be worth anything, from the cookie's own TTL. */
-function proofLifetimeMs(event: H3Event): number {
-  return (useRuntimeConfig(event).session.maxAge ?? 20 * 60) * 1000
+/**
+ * How long a proof is worth anything.
+ *
+ * This used to be the session cookie's own `maxAge`, which worked only while the
+ * cookie held nothing but proofs: it expired, they went with it, and no code had
+ * to think about it. The cookie now also carries a sign-in that is meant to last
+ * weeks, so leaning on its lifetime would quietly extend a twenty-minute proof
+ * to a thirty-day one — and a proof is evidence that someone was at the provider
+ * *just now*, which is the whole reason it is short.
+ *
+ * So the window is stated here and enforced against each proof's own
+ * `verifiedAt`, independent of whatever the cookie outlives.
+ */
+export const PROOF_TTL_MS = 20 * 60 * 1000
+
+function proofLifetimeMs(): number {
+  return PROOF_TTL_MS
+}
+
+/** Whether this proof was minted recently enough to still mean anything. */
+function isFresh(verifiedAt: string | undefined): boolean {
+  const at = Date.parse(verifiedAt ?? '')
+  return Number.isFinite(at) && Date.now() - at < PROOF_TTL_MS
 }
 
 async function isSpent(id: string): Promise<boolean> {
@@ -72,7 +98,7 @@ export async function burnProof(event: H3Event, id: string): Promise<void> {
   // guards nothing. Pruned here rather than on a schedule: this path is rare,
   // and it keeps the table bounded without anything else to run. Doubled to stay
   // clear of clock skew between instances.
-  const cutoff = new Date(Date.now() - proofLifetimeMs(event) * 2).toISOString()
+  const cutoff = new Date(Date.now() - proofLifetimeMs() * 2).toISOString()
   await sql`DELETE FROM spent_proofs WHERE spent_at < ${cutoff}`
 }
 
@@ -142,10 +168,15 @@ export async function readProofs(event: H3Event): Promise<IdentityProof[]> {
   // remembering to ask.
   const proved = held.filter(p => p?.identity?.confirmation === 'control')
 
+  // Lapsed proofs are dropped here rather than left to the cookie, which now
+  // outlives them by weeks. Without this, signing in would hand a reader a
+  // thirty-day proof of a moment at the provider.
+  const fresh = proved.filter(p => isFresh(p?.identity?.verifiedAt))
+
   // Each id is checked, not just the first: proofs end one at a time, so a set
   // can hold a spent one beside live ones.
   const live = await Promise.all(
-    proved.map(async proof => (proof?.id && !(await isSpent(proof.id)) ? proof : null))
+    fresh.map(async proof => (proof?.id && !(await isSpent(proof.id)) ? proof : null))
   )
   return live.filter((p): p is IdentityProof => p !== null)
 }

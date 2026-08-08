@@ -247,6 +247,36 @@ async function fulfillOrder(stripe: Stripe, summary: Stripe.Checkout.Session) {
   })
   const job_id = (job as { id?: string | number }).id
   console.info(`[fulfilment] Lulu print job created for session ${session.id} (job ${job_id}, mock=${isLuluMocked()}).`)
+
+  // Write the purchase down. Until this existed the only records of a catalog
+  // order were Stripe's and Lulu's, so a buyer asking where their book was could
+  // not be answered from here at all.
+  //
+  // After the print job, not before: the job is the step that can fail and be
+  // retried, and a row written ahead of it would claim an order that never got
+  // printed. A row lost the other way is the better failure — the parcel is on
+  // its way and the gap is visible in the Lulu dashboard.
+  const buyerEmail = session.customer_details?.email
+  if (buyerEmail) {
+    try {
+      await recordOrder({
+        stripeSessionId: session.id,
+        email: buyerEmail,
+        name: shipping?.name || session.customer_details?.name || '',
+        items: cart,
+        amountCents: session.amount_total ?? 0,
+        currency: session.currency || 'usd',
+        luluJobId: job_id
+      })
+    } catch (err) {
+      // Never throw: the books are already printing, and throwing here would
+      // make Stripe retry a delivery whose real work is done — printing them a
+      // second time.
+      console.error(`[fulfilment] session ${session.id} printed as Lulu job ${job_id} but was not recorded:`, err)
+    }
+  } else {
+    console.error(`[fulfilment] session ${session.id} has no buyer email; order not recorded.`)
+  }
 }
 
 /** Read a `[{slug, quantity}]` snapshot out of session metadata. */

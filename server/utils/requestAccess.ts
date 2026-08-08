@@ -2,9 +2,21 @@
 //
 // Before the identity challenge existed, the request's unguessable id was the
 // whole capability: whoever held the link from the confirmation email could edit
-// or withdraw it. Now the account is the authority and the id is just an
-// address — you prove the account again, and we match that fresh proof against
-// the identity stored on the request.
+// or withdraw it. Then the account became the authority and the id was just an
+// address — prove the account again, and match that fresh proof against the
+// identity stored on the request.
+//
+// There are now two keys, either of which is enough: that account, or the email
+// address the request was posted with, proved by signing in. Both are things
+// only the poster should have, and the second closes the hole the note at the
+// bottom of this file describes — a reader who posted under a Mastodon account
+// or a claimed handle had no way back in at all, because there is no route to
+// re-prove those.
+//
+// Two keys is more surface than one, and worth being clear about: an inbox now
+// opens a posting. It does not open the ability to *make* one. That still costs
+// a proved public account, because the account is what a stranger deciding
+// whether to spend money is shown.
 
 import type { H3Event } from 'h3'
 import { sharesAccount } from '#shared/identity'
@@ -44,6 +56,19 @@ import type { BookRequest } from './requests'
  * to do if a reader ever cannot take down a request they posted.)
  */
 export async function requireRequestOwner(event: H3Event, request: BookRequest) {
+  // Either key opens this. The address the request was posted with is checked
+  // first because it is the cheaper answer — no round trip to a provider — and
+  // because it is the one that still works for a reader who has lost access to
+  // the account they posted under, which the paragraph above notes as the case
+  // nothing could previously rescue.
+  //
+  // This is a real widening: an inbox is now as good as the account for changing
+  // a posting. It is not as good for *making* one, and must never become so —
+  // the account is what a giver is shown, and no email address tells them
+  // anything. See `requireIdentities` in the request handler.
+  const signedIn = await readSignedIn(event)
+  if (signedIn && normalizeEmail(request.email) === signedIn.email) return
+
   if (request.requesters.length === 0) return
 
   const held = await requireIdentities(event, 'changing your request')

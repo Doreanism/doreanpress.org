@@ -395,6 +395,33 @@ export async function getRequest(id: string): Promise<BookRequest | null> {
   return rows[0] ? fromRow(rows[0]) : null
 }
 
+/**
+ * Everything this address asked for, open or fulfilled, newest first.
+ *
+ * Matched on the contact email the reader gave, lowercased on both sides — the
+ * rows predate anyone signing in, so the addresses in them were typed into a
+ * form and never normalised. Comparing them raw would hide a reader's own
+ * orders from them over a capital letter.
+ */
+export async function listRequestsForEmail(email: string): Promise<BookRequest[]> {
+  await ensureSchema()
+  const rows = await db()`
+    SELECT * FROM book_requests WHERE lower(email) = ${normalizeEmail(email)}
+    ORDER BY created_at DESC
+  `
+  return rows.map(fromRow)
+}
+
+/** Everything this address paid for on someone else's behalf, newest first. */
+export async function listRequestsSponsoredBy(email: string): Promise<BookRequest[]> {
+  await ensureSchema()
+  const rows = await db()`
+    SELECT * FROM book_requests WHERE lower(sponsor_email) = ${normalizeEmail(email)}
+    ORDER BY created_at DESC
+  `
+  return rows.map(fromRow)
+}
+
 export async function listOpenRequests(): Promise<BookRequest[]> {
   await ensureSchema()
   const rows = await db()`

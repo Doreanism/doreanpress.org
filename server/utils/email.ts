@@ -215,6 +215,35 @@ ${SIGNATURE}`
   }
 }
 
+/**
+ * The sign-in code.
+ *
+ * Says what it is for and that an unexpected one can be ignored — a code
+ * arriving unasked means somebody typed this address, and the honest thing is to
+ * tell the reader that nothing has happened and nothing needs to.
+ */
+export function signInCodeEmail(params: { to: string, code: string, minutes: number }): EmailMessage {
+  const { to, code, minutes } = params
+  const text = `Your Dorean Press sign-in code is ${code}
+
+It works for the next ${minutes} minutes, once.
+
+If you didn't ask to sign in, nothing has happened and you can ignore this — the
+code is useless to anyone who doesn't have it, and we won't email you again
+about it.
+
+${SIGNATURE}`
+  return {
+    to,
+    subject: `${code} is your Dorean Press sign-in code`,
+    text,
+    html: layout(`<p>Your sign-in code is:</p>
+<p style="font-size:28px;font-weight:700;letter-spacing:0.18em;margin:16px 0;">${code}</p>
+<p>It works for the next ${minutes} minutes, once.</p>
+<p>If you didn’t ask to sign in, nothing has happened and you can ignore this.</p>`)
+  }
+}
+
 export function sponsorThankYouEmail(params: { to: string, titles: string[] }): EmailMessage {
   const { to, titles } = params
   const many = titles.length > 1
