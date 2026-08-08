@@ -13,7 +13,7 @@
 // node process doesn't have, hence the two globals below.
 
 import { ofetch } from 'ofetch'
-import { catalog, formatPrice } from '../shared/catalog.ts'
+import { catalog, formatPrice, SPONSOR_SHIPPING_CENTS } from '../shared/catalog.ts'
 
 const args = new Map(
   process.argv.slice(2)
@@ -198,29 +198,33 @@ console.log('(this quote: ' + dollars(quotes.find(q => q.tax !== undefined)?.tax
 
 const priced = quotes.filter(q => q.print !== undefined)
 if (priced.length > 0) {
-  console.log(`\nPrint cost per copy, as catalog \`priceCents\` — shipping is charged separately:\n`)
+  console.log(`\nAs catalog \`priceCents\` — print grossed up for Stripe's 2.9%:\n`)
   for (const q of priced) {
     const book = catalog.find(b => b.slug === q.slug)!
-    const perCopy = Math.ceil(q.print! * 100)
+    // Must match the rule documented above `catalog` in shared/catalog.ts: a
+    // price carries printing alone. Lulu's per-order fulfilment fee, Stripe's
+    // fixed 30¢ and the postage all ride on the shipping line instead.
+    const perCopy = Math.ceil(q.print! * 100 / 0.971)
     const note = perCopy === book.priceCents
       ? 'unchanged'
       : `now ${book.priceCents}, ${perCopy > book.priceCents ? 'under-priced by' : 'over-priced by'} ${formatPrice(Math.abs(perCopy - book.priceCents))}`
     console.log(`  ${pad(q.slug, 30)} priceCents: ${String(perCopy).padStart(5)}   (${note})`)
   }
   const fulfillment = priced.find(q => q.fulfillment !== undefined)?.fulfillment
-  console.log('\n  At cost is the floor, not the price. Stripe keeps roughly 2.9% + 30¢ of')
-  console.log('  every charge, and the figures above are print alone — Lulu also bills')
-  console.log(`  ${dollars(fulfillment)} fulfilment per order plus shipping, so a book sold at exactly`)
-  console.log('  this loses money on each sale.')
+  console.log(`\n  Bare print cost is the floor, not the price: Lulu also bills ${dollars(fulfillment)}`)
+  console.log('  fulfilment per order plus postage, and Stripe keeps 2.9% + 30¢ of every')
+  console.log('  charge. The per-order parts are recovered on the shipping line, so these')
+  console.log('  figures need only survive the percentage.')
 }
 
 const shipping = priced.find(q => q.shipping !== undefined)?.shipping
 if (shipping !== undefined) {
-  console.log(`\nShipping quoted at ${dollars(shipping)} for ${quantity} cop${quantity === 1 ? 'y' : 'ies'}. It scales with`)
-  console.log('the order, so a flat rate drifts further the more copies ship. The site charges:')
-  console.log('  $4.99 standard / $12.99 expedited   server/api/checkout.post.ts')
-  console.log('  $4.99 per sponsored request         shared/catalog.ts SPONSOR_SHIPPING_CENTS')
-  console.log('  Re-run with --level, --country and --qty to see how far those drift.')
+  console.log(`\nShipping quoted at ${dollars(shipping)} for ${quantity} cop${quantity === 1 ? 'y' : 'ies'}, to this address at`)
+  console.log(`${level}. It scales with the order and with where it is going. The site charges:`)
+  console.log('  cart checkout      quoted live per cart, per region   server/utils/shipping.ts')
+  console.log(`  sponsored request  flat ${formatPrice(SPONSOR_SHIPPING_CENTS)}                        shared/catalog.ts`)
+  console.log('  Re-run with --level, --country and --qty to check a region\'s reference')
+  console.log('  address, or to see how far the sponsor flat rate has drifted.')
 }
 
 if (args.has('json')) {

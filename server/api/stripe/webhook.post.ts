@@ -1,6 +1,7 @@
 import type Stripe from 'stripe'
 import { findBook, itemsCopies, itemTitles, limitItems, subtractItems, type RequestItem } from '#shared/catalog'
 import type { LuluLineItem, LuluShippingAddress, ShippingLevel } from '../../utils/lulu'
+import { SHIPPING_REGIONS } from '../../utils/shipping'
 
 // Duplicate deliveries are kept out by a durable claim in the database — see
 // `server/utils/webhookEvents.ts` for why an in-memory guard cannot work here.
@@ -176,7 +177,7 @@ async function fulfillSponsorship(session: Stripe.Checkout.Session) {
 async function fulfillOrder(stripe: Stripe, summary: Stripe.Checkout.Session) {
   // Re-fetch to be sure we have shipping + cost details.
   const session = await stripe.checkout.sessions.retrieve(summary.id, {
-    expand: ['shipping_cost']
+    expand: ['shipping_cost', 'shipping_cost.shipping_rate']
   })
 
   // Stripe moved shipping details under `collected_information`; support both.
@@ -225,9 +226,15 @@ async function fulfillOrder(stripe: Stripe, summary: Stripe.Checkout.Session) {
     email: session.customer_details?.email || undefined
   }
 
-  // Map the chosen flat-rate shipping to a Lulu shipping level.
-  const shippingAmount = session.shipping_cost?.amount_total ?? 0
-  const shippingLevel: ShippingLevel = shippingAmount >= 1299 ? 'EXPEDITED' : 'MAIL'
+  // Ship at the level the reader actually chose and paid for. This used to read
+  // the amount and call anything at or over $12.99 expedited, which was true
+  // only while both rates were flat: shipping is now quoted per cart and per
+  // region, so ordinary standard postage to Australia clears that threshold and
+  // would have been posted express at the press's expense.
+  const chosenRate = session.shipping_cost?.shipping_rate
+  const chosenLabel = typeof chosenRate === 'string' ? undefined : chosenRate?.display_name
+  const shippingLevel: ShippingLevel
+    = SHIPPING_REGIONS.find(r => r.label === chosenLabel)?.level ?? 'MAIL'
 
   // Throwing is deliberate: nothing has been printed, so the caller releases
   // the claim and Stripe retries. Swallowing here is what used to lose an order

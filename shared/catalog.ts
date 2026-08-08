@@ -55,24 +55,25 @@ export interface Book {
 }
 
 // How `priceCents` below were arrived at, quoted from api.lulu.com on
-// 2026-08-08 (`npm run lulu:prices`, 1 copy, MAIL, to a US address):
+// 2026-08-08 (`npm run lulu:prices`):
 //
 //   print/copy = $1.99 + $0.025/page, flat 32–800pp, same for every trim size
 //
-// Print alone is the floor, not the price. On a one-copy domestic order Lulu
-// bills print + $0.75 fulfilment + $5.69 shipping, while the site collects the
-// price + $4.99 shipping and Stripe keeps 2.9% + 30¢. Priced at bare print cost
-// each sale would lose about $2.11, which donations would have to make up.
+// A price covers printing one copy and nothing else. Everything charged once per
+// order rather than per copy — Lulu's $0.75 fulfilment fee, Stripe's fixed 30¢,
+// and the postage itself — rides on the shipping line instead, which is quoted
+// live per cart and per destination in `server/utils/shipping.ts`. Keeping the
+// two apart is what stops a second copy from paying a second postage.
 //
-// So each price solves for a sale that nets the press ~$0.00 instead:
+// What remains is Stripe's 2.9%, which is taken from the whole charge including
+// the books, so each price is grossed up to survive it:
 //
-//   priceCents = (print + 0.75 + 5.69 + 0.30) / 0.971 - 4.99
+//   priceCents = ceil(print / 0.971)
 //
-// This is at cost in the sense the dorean principle intends — the reader pays
-// what the book costs to reach them, and the press takes nothing from it. Re-run
-// the script when a page count changes or Lulu moves its rates; the quoted
-// shipping ($5.69) already exceeds what the site charges ($4.99), so the two
-// shipping figures are worth re-checking together.
+// Net result: a sale returns the press ~$0.00. That is at cost in the sense the
+// dorean principle intends — the reader pays what the book costs to reach them,
+// and the press takes none of it. Re-run the script when a page count changes or
+// Lulu moves its rates.
 export const catalog: Book[] = [
   {
     slug: 'the-dorean-principle',
@@ -84,7 +85,7 @@ export const catalog: Book[] = [
     format: 'Paperback · 6×9 · 220 pages',
     dimensions: '6 x 9 x .50 inches',
     weightOz: 12.8,
-    priceCents: 967, // print $7.49 (220pp)
+    priceCents: 772, // print $7.49 (220pp)
     currency: 'usd',
     cover: '/covers/the-dorean-principle.svg',
     tagline: 'Reclaiming the conviction that the gospel is freely given.',
@@ -111,7 +112,7 @@ export const catalog: Book[] = [
     format: 'Paperback · 6×9 · 168 pages',
     dimensions: '6 x 9 x .38 inches',
     weightOz: 9.8,
-    priceCents: 833, // print $6.19 (168pp)
+    priceCents: 638, // print $6.19 (168pp)
     currency: 'usd',
     cover: '/covers/freely-you-have-received.svg',
     tagline: 'A collection on supporting ministry without selling it.',
@@ -136,7 +137,7 @@ export const catalog: Book[] = [
     format: 'Paperback · 5.5×8.5 · 256 pages',
     dimensions: '5.5 x 8.5 x .58 inches',
     weightOz: 12.6,
-    priceCents: 1059, // print $8.39 (256pp)
+    priceCents: 865, // print $8.39 (256pp)
     currency: 'usd',
     cover: '/covers/merchants-in-the-temple.svg',
     tagline: 'A historical survey of paywalls in the pulpit.',
@@ -161,7 +162,7 @@ export const catalog: Book[] = [
     format: 'Paperback · 5×8 · 120 pages',
     dimensions: '5 x 8 x .27 inches',
     weightOz: 5.4,
-    priceCents: 709, // print $4.99 (120pp)
+    priceCents: 514, // print $4.99 (120pp)
     currency: 'usd',
     cover: '/covers/colaborers.svg',
     tagline: 'How the church becomes a fellow worker with the truth.',
@@ -210,8 +211,22 @@ export interface RequestItem {
 /**
  * Flat shipping a sponsor covers for a whole request — one order ships in one
  * parcel, so this is charged once regardless of how many titles it holds.
+ *
+ * Unlike the cart, this one cannot be quoted live. The board prices every
+ * request in the browser as the sponsor picks copies on and off, and a Lulu
+ * call per adjustment is not something to put behind a button that moves that
+ * often. So it stays flat, now set from real quotes rather than invention:
+ * $5.69 postage to a typical US address, plus Lulu's 75¢ fulfilment and
+ * Stripe's 30¢, grossed up for Stripe's 2.9%.
+ *
+ * Two ways it is still wrong, both under-recovering rather than over-charging:
+ * a request going overseas costs more to post than this (Canada and New Zealand
+ * roughly double it), and a large request costs more than a small one. Pricing
+ * either properly means knowing the destination while the board renders —
+ * either by quoting once when the request is made and storing it, or by putting
+ * the country on the public request. Both are real changes; neither is this one.
  */
-export const SPONSOR_SHIPPING_CENTS = 499
+export const SPONSOR_SHIPPING_CENTS = 695
 
 /** Subtotal of a request's books, in cents. Unknown slugs are skipped. */
 export function itemsSubtotalCents(items: RequestItem[]): number {
