@@ -13,21 +13,33 @@
 // single missing fence would be enough to hand out free books.
 //
 //   /verify/youface?redirect=/give
-//   /verify/youface?redirect=/give&name=Ada%20Lovelace&handle=ada
+//   /verify/youface?redirect=/give&name=Mister%20Developer&handle=misterdeveloper
 //
 // Click it repeatedly to attach several — each click invents a different person,
 // so they accumulate up to MAX_ATTACHED rather than replacing one another.
 
-/** Invented people, so repeated clicks build a plausible-looking board. */
+/**
+ * Invented people, named so nobody has to work out that they are invented.
+ *
+ * These end up on the Give board beside real requests, in the same card, with
+ * the same badge saying the account was signed into. A plausible name — the
+ * first draft of this list had Ada Lovelace and Grace Hopper on it — is a row
+ * you have to remember the provenance of. A name that says what it is cannot be
+ * misread by whoever opens the board next, screenshots it, or finds the row
+ * still sitting there a week later.
+ *
+ * So: no surnames that look like surnames, and every one legible as a fixture at
+ * a glance. Distinct from each other too, since the point is attaching several.
+ */
 const PEOPLE = [
-  { name: 'Marge Bouvier', handle: 'marge' },
-  { name: 'Ada Lovelace', handle: 'ada' },
-  { name: 'Hiro Protagonist', handle: 'hiro' },
-  { name: 'Ford Prefect', handle: 'ford' },
-  { name: 'Ursula Vane', handle: 'uvane' },
-  { name: 'Bartholomew Quill', handle: 'bquill' },
-  { name: 'Grace Hopper', handle: 'ghopper' },
-  { name: 'Nadia Comăneci', handle: 'nadia' }
+  { name: 'Mister Developer', handle: 'misterdeveloper' },
+  { name: 'Doctor Localhost', handle: 'doctorlocalhost' },
+  { name: 'Captain Placeholder', handle: 'captainplaceholder' },
+  { name: 'Professor Sample', handle: 'professorsample' },
+  { name: 'Agent Fixture', handle: 'agentfixture' },
+  { name: 'Sir Not-In-Production', handle: 'notinproduction' },
+  { name: 'Madam Test Data', handle: 'madamtestdata' },
+  { name: 'Baron Von Stub', handle: 'baronvonstub' }
 ]
 
 /** Avatar as a data URI: no network, so it works offline and never expires. */
