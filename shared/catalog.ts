@@ -33,7 +33,13 @@ export interface Book {
   dimensions: string
   /** Shipping weight of a single copy, in ounces. */
   weightOz: number
-  /** Retail price the customer pays, per copy, in the smallest currency unit. */
+  /**
+   * Retail price the customer pays, per copy, in the smallest currency unit.
+   *
+   * Set at cost, in the sense that a sale nets the press roughly nothing —
+   * not in the sense of Lulu's print cost alone, which would lose money on
+   * every order. See `npm run lulu:prices` and the note below the catalog.
+   */
   priceCents: number
   currency: 'usd'
   /** Cover image served from /public. */
@@ -48,6 +54,25 @@ export interface Book {
   lulu: LuluSpec
 }
 
+// How `priceCents` below were arrived at, quoted from api.lulu.com on
+// 2026-08-08 (`npm run lulu:prices`, 1 copy, MAIL, to a US address):
+//
+//   print/copy = $1.99 + $0.025/page, flat 32–800pp, same for every trim size
+//
+// Print alone is the floor, not the price. On a one-copy domestic order Lulu
+// bills print + $0.75 fulfilment + $5.69 shipping, while the site collects the
+// price + $4.99 shipping and Stripe keeps 2.9% + 30¢. Priced at bare print cost
+// each sale would lose about $2.11, which donations would have to make up.
+//
+// So each price solves for a sale that nets the press ~$0.00 instead:
+//
+//   priceCents = (print + 0.75 + 5.69 + 0.30) / 0.971 - 4.99
+//
+// This is at cost in the sense the dorean principle intends — the reader pays
+// what the book costs to reach them, and the press takes nothing from it. Re-run
+// the script when a page count changes or Lulu moves its rates; the quoted
+// shipping ($5.69) already exceeds what the site charges ($4.99), so the two
+// shipping figures are worth re-checking together.
 export const catalog: Book[] = [
   {
     slug: 'the-dorean-principle',
@@ -59,7 +84,7 @@ export const catalog: Book[] = [
     format: 'Paperback · 6×9 · 220 pages',
     dimensions: '6 x 9 x .50 inches',
     weightOz: 12.8,
-    priceCents: 1200,
+    priceCents: 967, // print $7.49 (220pp)
     currency: 'usd',
     cover: '/covers/the-dorean-principle.svg',
     tagline: 'Reclaiming the conviction that the gospel is freely given.',
@@ -86,7 +111,7 @@ export const catalog: Book[] = [
     format: 'Paperback · 6×9 · 168 pages',
     dimensions: '6 x 9 x .38 inches',
     weightOz: 9.8,
-    priceCents: 1000,
+    priceCents: 833, // print $6.19 (168pp)
     currency: 'usd',
     cover: '/covers/freely-you-have-received.svg',
     tagline: 'A collection on supporting ministry without selling it.',
@@ -111,7 +136,7 @@ export const catalog: Book[] = [
     format: 'Paperback · 5.5×8.5 · 256 pages',
     dimensions: '5.5 x 8.5 x .58 inches',
     weightOz: 12.6,
-    priceCents: 1400,
+    priceCents: 1059, // print $8.39 (256pp)
     currency: 'usd',
     cover: '/covers/merchants-in-the-temple.svg',
     tagline: 'A historical survey of paywalls in the pulpit.',
@@ -136,7 +161,7 @@ export const catalog: Book[] = [
     format: 'Paperback · 5×8 · 120 pages',
     dimensions: '5 x 8 x .27 inches',
     weightOz: 5.4,
-    priceCents: 900,
+    priceCents: 709, // print $4.99 (120pp)
     currency: 'usd',
     cover: '/covers/colaborers.svg',
     tagline: 'How the church becomes a fellow worker with the truth.',
