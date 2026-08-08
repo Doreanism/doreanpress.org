@@ -38,7 +38,7 @@ useSeoMeta({
 
 <template>
   <UApp :toaster="{ progress: false, position: 'bottom-right' }">
-    <KonamiRunner />
+    <KonamiSpray />
 
     <UHeader>
       <template #left>
