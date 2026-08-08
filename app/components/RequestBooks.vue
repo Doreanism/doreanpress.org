@@ -13,8 +13,14 @@ import { findBook, type RequestItem } from '#shared/catalog'
 // card in the fan reads as a book we failed to load.
 //
 // Pass `selectable` with a v-model to let a sponsor pick out part of the order:
-// the titles get checkboxes (and a copy count where more than one was asked
-// for), and covers they haven't picked fade back in the fan.
+// each title gets a count of copies to give, from none up to however many were
+// asked for, and covers they haven't picked fade back in the fan.
+//
+// One control per line, not two. There used to be a checkbox for whether to give
+// and a stepper for how many, which meant zero was sayable in one place and one
+// through eight in the other — two widgets for one number, and a request for
+// eight copies still took eight presses to cover. The stepper reaches zero
+// itself now, with None and All for the ends.
 //
 // The titles are plain text, not links to the catalog. They sit beside those
 // checkboxes, so a link there invites a click that navigates off the board and
@@ -61,18 +67,31 @@ function current() {
   return new Map(props.modelValue.map(i => [i.slug, i.quantity]))
 }
 
-function toggle(line: { item: RequestItem }, on: boolean) {
-  const next = current()
-  if (on) next.set(line.item.slug, line.item.quantity)
-  else next.delete(line.item.slug)
-  apply(next)
-}
-
+/**
+ * Zero is a real answer here, not the absence of one: it means this title stays
+ * on the board for someone else. `apply` drops empty lines, so setting zero and
+ * unticking the checkbox are the same act by two routes, and they stay in step.
+ */
 function setCopies(line: { item: RequestItem }, copies: number) {
-  const clamped = Math.max(1, Math.min(line.item.quantity, Math.floor(copies) || 1))
+  const clamped = Math.max(0, Math.min(line.item.quantity, Math.floor(copies) || 0))
   const next = current()
   next.set(line.item.slug, clamped)
   apply(next)
+}
+
+/**
+ * Both ends in one click.
+ *
+ * A request for eight copies is eight presses of the stepper away from being
+ * fully covered, which is the commonest thing a sponsor wants to do and the
+ * slowest way offered to do it.
+ */
+function setAll(line: { item: RequestItem }) {
+  setCopies(line, line.item.quantity)
+}
+
+function setNone(line: { item: RequestItem }) {
+  setCopies(line, 0)
 }
 
 /** Titles drawn in full before the order is summarised instead. */
@@ -123,19 +142,37 @@ function tilt(index: number) {
       </p>
       <div
         v-if="selectable && lines[0].item.quantity > 1"
-        class="mt-2 flex items-center gap-2"
+        class="mt-2 flex flex-wrap items-center gap-2 text-sm"
       >
-        <span class="text-sm text-muted">Sponsor</span>
+        <span class="text-muted">Sponsor</span>
         <UInputNumber
-          :model-value="copiesFor(lines[0].item.slug) || 1"
-          :min="1"
+          :model-value="copiesFor(lines[0].item.slug)"
+          :min="0"
           :max="lines[0].item.quantity"
           size="xs"
           class="w-20"
           :aria-label="`Copies of ${lines[0].book.title} to sponsor`"
           @update:model-value="(v: number) => setCopies(lines[0]!, v)"
         />
-        <span class="text-sm text-muted">of {{ lines[0].item.quantity }}</span>
+        <span class="text-muted">of {{ lines[0].item.quantity }}</span>
+        <UButtonGroup size="xs">
+          <UButton
+            label="None"
+            color="neutral"
+            variant="subtle"
+            :disabled="copiesFor(lines[0].item.slug) === 0"
+            :aria-label="`Sponsor none of ${lines[0].book.title}`"
+            @click="setNone(lines[0]!)"
+          />
+          <UButton
+            label="All"
+            color="neutral"
+            variant="subtle"
+            :disabled="copiesFor(lines[0].item.slug) === lines[0].item.quantity"
+            :aria-label="`Sponsor all ${lines[0].item.quantity} of ${lines[0].book.title}`"
+            @click="setAll(lines[0]!)"
+          />
+        </UButtonGroup>
       </div>
     </div>
   </div>
@@ -182,13 +219,6 @@ function tilt(index: number) {
         :key="line.item.slug"
         class="flex min-w-0 items-start gap-2"
       >
-        <UCheckbox
-          v-if="selectable"
-          :model-value="Boolean(picked(line.item.slug))"
-          class="mt-0.5"
-          :aria-label="`Sponsor ${line.book.title}`"
-          @update:model-value="(v: boolean | 'indeterminate') => toggle(line, v === true)"
-        />
         <div class="min-w-0">
           <span class="font-display font-semibold text-highlighted">
             {{ line.book.title }}
@@ -199,14 +229,20 @@ function tilt(index: number) {
             class="text-toned"
           > · {{ line.item.quantity }} copies</span>
 
+          <!--
+            Shown for every line, including single-copy ones. It used to appear
+            only for a ticked line asking for more than one copy, because the
+            checkbox carried whether-to-give and this carried how-many. With zero
+            sayable here, one control carries both.
+          -->
           <div
-            v-if="selectable && line.item.quantity > 1 && picked(line.item.slug)"
-            class="mt-1 flex items-center gap-2"
+            v-if="selectable"
+            class="mt-1 flex flex-wrap items-center gap-2"
           >
             <span class="text-muted">Sponsor</span>
             <UInputNumber
               :model-value="copiesFor(line.item.slug)"
-              :min="1"
+              :min="0"
               :max="line.item.quantity"
               size="xs"
               class="w-20"
@@ -214,6 +250,24 @@ function tilt(index: number) {
               @update:model-value="(v: number) => setCopies(line, v)"
             />
             <span class="text-muted">of {{ line.item.quantity }}</span>
+            <UButtonGroup size="xs">
+              <UButton
+                label="None"
+                color="neutral"
+                variant="subtle"
+                :disabled="copiesFor(line.item.slug) === 0"
+                :aria-label="`Sponsor none of ${line.book.title}`"
+                @click="setNone(line)"
+              />
+              <UButton
+                label="All"
+                color="neutral"
+                variant="subtle"
+                :disabled="copiesFor(line.item.slug) === line.item.quantity"
+                :aria-label="`Sponsor all ${line.item.quantity} of ${line.book.title}`"
+                @click="setAll(line)"
+              />
+            </UButtonGroup>
           </div>
         </div>
       </li>
