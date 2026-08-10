@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { byStrength, confirmationClaim, providerIcon, providerLabel, MAX_ATTACHED } from '#shared/identity'
+import {
+  accountKey,
+  byStrength,
+  confirmationClaim,
+  providerIcon,
+  providerLabel,
+  MAX_ATTACHED,
+  type RequesterIdentity
+} from '#shared/identity'
 
 // Attaching a public account, away from the request form.
 //
@@ -22,6 +30,32 @@ onMounted(() => {
 })
 
 const route = useRoute()
+
+/**
+ * Detach one account, leaving the others.
+ *
+ * The page told readers to remove one to make room and gave them nothing to
+ * press — the endpoint and the modal's version of this have existed all along.
+ *
+ * Removing burns the proof server-side rather than only dropping it from the
+ * cookie, so an account walked away from is as dead as a spent one. Which is
+ * also why there is no undo: getting it back means going to the provider again,
+ * and the button says "Remove" rather than anything softer for that reason.
+ */
+const detaching = ref<string | null>(null)
+
+async function detach(identity: RequesterIdentity) {
+  const key = accountKey(identity)
+  detaching.value = key
+  try {
+    await $fetch('/api/verify/discard', { method: 'POST', body: { account: key } })
+  } catch {
+    // Even if the call fails, re-reading below tells us where we actually stand.
+  } finally {
+    await refresh()
+    detaching.value = null
+  }
+}
 </script>
 
 <template>
@@ -72,13 +106,25 @@ const route = useRoute()
                 {{ confirmationClaim(identity) }}
               </p>
             </div>
-            <UBadge
-              :label="providerLabel(identity.provider)"
-              color="neutral"
-              variant="subtle"
-              size="sm"
-              class="ms-auto shrink-0"
-            />
+            <div class="ms-auto flex shrink-0 items-center gap-2">
+              <UBadge
+                :label="providerLabel(identity.provider)"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+              />
+              <UButton
+                icon="i-lucide-trash-2"
+                color="error"
+                variant="ghost"
+                size="xs"
+                :loading="detaching === accountKey(identity)"
+                :disabled="detaching !== null"
+                :aria-label="`Remove ${identity.name} on ${providerLabel(identity.provider)}`"
+                title="Remove"
+                @click="detach(identity)"
+              />
+            </div>
           </li>
         </ul>
       </div>
