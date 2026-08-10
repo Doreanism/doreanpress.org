@@ -70,6 +70,29 @@ const allowance = computed(() => props.limit
   ? `You can attach up to ${props.limit} profiles — several together say more than any one of them alone.`
   : 'You can attach more than one — several profiles together say more than any of them alone.')
 
+/**
+ * Set when the reader has just come back from a provider that could not be
+ * attached because the set was already full.
+ *
+ * Deliberately not driven by the count. Holding the maximum is a fine place to
+ * be — it is the allowance, taken up — and colouring the page red for a reader
+ * who has done exactly what was invited would be scolding them for it. The only
+ * thing worth saying is that a particular attempt had no effect, which is a
+ * thing that happened rather than a state to sit in.
+ */
+const bounced = ref(false)
+onMounted(() => {
+  if (!route.query.verifyFull) return
+  bounced.value = true
+
+  // Strip it, so a reload does not go on reporting a sign-in from ten minutes
+  // ago. The message is about a thing that just happened, and stops being true
+  // the moment it stops being recent.
+  const query = { ...route.query }
+  delete query.verifyFull
+  useRouter().replace({ query })
+})
+
 function challengeUrl(provider: IdentityProvider, handle?: string) {
   const params = new URLSearchParams({ redirect: props.redirect || route.fullPath })
   if (handle) params.set('handle', handle)
@@ -234,6 +257,29 @@ const providerOptions = computed(() => {
             />
           </template>
         </div>
+
+        <!--
+          Said here, under the buttons, rather than thrown as a 400 page: a
+          reader who has just signed in at a provider and been sent back has
+          done nothing wrong, and an error page loses their place.
+
+          Only after an attempt that did not take. Sitting at the maximum is not
+          a problem and is not marked as one.
+
+          The buttons stay live on purpose. Signing into an account that is
+          already attached is still allowed at the ceiling — it replaces that
+          one rather than adding a fifth — so disabling them would block the one
+          thing a full reader might legitimately want to do.
+        -->
+        <p
+          v-if="bounced"
+          class="text-sm font-medium text-red-500 dark:text-red-400"
+          role="status"
+        >
+          That account wasn't added — you already have {{ props.limit }} profiles
+          attached, which is as many as one request can carry. Remove one to make
+          room for it.
+        </p>
       </div>
 
       <UFormField

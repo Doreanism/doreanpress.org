@@ -132,9 +132,14 @@ export async function issueProof(
 
   const kept = held.filter(p => accountKey(p.identity) !== key)
   if (kept.length >= MAX_ATTACHED) {
+    // `data.limit` so the challenge routes can tell this apart from a provider
+    // going wrong. A reader coming back from a successful sign-in to be shown a
+    // bare 400 page has done nothing wrong and has lost their place; the routes
+    // turn this into a message beside the accounts instead.
     throw createError({
       statusCode: 400,
-      statusMessage: `You can attach up to ${MAX_ATTACHED} profiles to a request. Remove one to add another.`
+      statusMessage: `You can attach up to ${MAX_ATTACHED} profiles to a request. Remove one to add another.`,
+      data: { limit: true }
     })
   }
 

@@ -69,7 +69,19 @@ export async function completeChallenge(
   identity: Omit<RequesterIdentity, 'verifiedAt' | 'confirmation'>,
   email?: string
 ) {
-  await issueProof(event, { ...identity, confirmation: 'control' }, email)
+  try {
+    await issueProof(event, { ...identity, confirmation: 'control' }, email)
+  } catch (err) {
+    // Being full is not an error the reader made. They signed in, the provider
+    // said yes, and the only problem is that they already have as many accounts
+    // attached as a request may carry — so send them back to where they were,
+    // where the page says so beside the accounts. Throwing here rendered a bare
+    // 400 page instead, which loses their place and reads like a fault.
+    if ((err as { data?: { limit?: boolean } })?.data?.limit) {
+      return sendRedirect(event, withQuery(takeReturnTo(event), { verifyFull: '1' }))
+    }
+    throw err
+  }
   return sendRedirect(event, takeReturnTo(event))
 }
 
