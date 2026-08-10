@@ -10,7 +10,10 @@ useChallengeFeedback()
 // ordered — and the nav is the site's own sections. Keeping them together also
 // means the signed-in state is in one predictable corner instead of moving
 // around inside a list whose length changes with it.
-const { signedIn, refresh } = useSignedIn()
+//
+// Only `refresh` is wanted here: the menu reads the state itself, and this is
+// just the one place that resolves it before a page renders.
+const { refresh } = useSignedIn()
 
 // Not during prerender. `/` and `/about` are built once and served to everyone
 // (see `routeRules`), so there is no reader to ask about at build time — asking
@@ -71,25 +74,13 @@ useSeoMeta({
         <!--
           Client-only, because a prerendered page has no reader: `/` is one file
           served to everybody, so whatever this rendered at build time would be
-          wrong for all but one of them. The fallback holds the same two slots so
-          the corner does not jump as it resolves.
-
-          Appearance sits in the gear only while there is no account menu to hold
-          it — two buttons offering one control would make the corner a puzzle
-          about which is the real one.
+          wrong for all but one of them. The fallback holds the slot so the
+          corner does not jump as it resolves.
         -->
         <ClientOnly>
-          <AppSettings v-if="!signedIn" />
           <AppAccountMenu />
 
           <template #fallback>
-            <UButton
-              icon="i-lucide-settings"
-              color="neutral"
-              variant="ghost"
-              disabled
-              aria-hidden="true"
-            />
             <UButton
               icon="i-lucide-circle-user-round"
               color="neutral"
