@@ -1,9 +1,12 @@
 <script setup lang="ts">
-// The light/dark/system choice, on its own so it can sit in either menu.
+// The light/dark/system choice.
 //
-// It lives in the settings popover for a reader who is not signed in, and moves
-// into the account menu for one who is — the same control, not two, so the tick
-// can never disagree with itself.
+// One section of the one corner menu, and unconditionally so. It used to live
+// in the gear when you were signed out and move into the account menu when you
+// were signed in, which is the arrangement that made a merged corner unworkable
+// — a control you have to go looking for in a different place depending on your
+// own state. Kept a component of its own because it is a distinct subject
+// inside that menu, not because it has anywhere else to go.
 const colorMode = useColorMode()
 
 const appearances = [

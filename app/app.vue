@@ -72,17 +72,21 @@ useSeoMeta({
 
       <template #right>
         <!--
-          Settings is the site, the account is you, the cart is what you are
-          buying. Three buttons that do not trade places depending on who is
-          looking.
-        -->
-        <AppSettings />
+          Two buttons: this one is you and how you see the site, the cart is
+          what you are buying. The gear that stood here folded into the person
+          beside it — one place to look rather than a choice about which of two
+          corners a setting lives in.
 
-        <!--
           Client-only, because a prerendered page has no reader: `/` is one file
           served to everybody, so whatever this rendered at build time would be
           wrong for all but one of them. The fallback holds the slot so the
           corner does not jump as it resolves.
+
+          That now covers Appearance too, which the gear used to render on the
+          server. No loss: the control inside was already client-only — it
+          cannot know which theme this browser holds until it is in it — so it
+          arrived disabled either way, and it sits behind a click that cannot
+          happen before hydration.
         -->
         <ClientOnly>
           <AppAccountMenu />
