@@ -12,11 +12,18 @@
 // that whatever else is in the cookie, only real proofs come out.
 //
 // A reader may attach several accounts to one request, so the cookie holds a
-// *set* of proofs rather than one. Checking a second account therefore adds to
-// what is held instead of replacing it — which is the one behaviour to keep in
-// mind when changing anything below, because the previous version of this file
-// burned the old proof on every new check and reintroducing that would silently
-// drop the account a reader attached a moment ago.
+// *set* of proofs rather than one. Checking an account at a provider they have
+// not used yet therefore adds to what is held instead of replacing it — which
+// is the one behaviour to keep in mind when changing anything below, because
+// the earliest version of this file burned the old proof on *every* new check
+// and reintroducing that would silently drop the account a reader attached a
+// moment ago.
+//
+// Replacement is scoped to the provider, and only to the provider. A set holds
+// at most one profile apiece, so signing into a second Facebook account stands
+// in for the first — but it must never touch the GitHub account sitting beside
+// it. The distinction is the whole difference between the rule and the bug: one
+// burns the proofs that a new one supersedes, the other burns the lot.
 //
 // Within that window what is held covers everything the reader does: post a
 // request, correct it, take it down. Each proof asserts one thing — this account
@@ -111,10 +118,11 @@ export async function burnProof(event: H3Event, id: string): Promise<void> {
  * `confirmation` recorded on one can be trusted to have come from the code that
  * actually did the checking.
  *
- * Re-checking an account already attached replaces that entry rather than
+ * Attaching at a provider already attached replaces what was there rather than
  * doubling it, and burns the proof it replaces: the fresher check is the one
  * that should be spendable, and leaving the stale id valid would mean a proof
- * nothing points at any more still opening doors.
+ * nothing points at any more still opening doors. This holds whether or not it
+ * is the same account — a set carries at most one profile per provider.
  *
  * Stored under `proofs`, never `user`: this is evidence, not a session.
  */
@@ -124,13 +132,31 @@ export async function issueProof(
   email?: string
 ): Promise<void> {
   const held = await readProofs(event)
-  const key = accountKey(identity)
 
-  // The same account checked again — by a stronger route, or just re-typed.
-  const replaced = held.find(p => accountKey(p.identity) === key)
-  if (replaced) await burnProof(event, replaced.id)
+  // One account per provider, so a second sign-in at the same one replaces the
+  // first rather than sitting beside it.
+  //
+  // Four Facebook accounts are not four things a sponsor can weigh. The badge
+  // is worth something because an account with a history costs time to build,
+  // and that cost is per person, not per login: anybody willing to make one
+  // throwaway can make four, so a card carrying four of them looks four times
+  // as established while being no more evidence than one. Breadth across
+  // providers is the thing that is actually hard to fake, and it is what the
+  // allowance is for.
+  //
+  // Replace rather than refuse, because the reader who signs in twice at one
+  // provider is usually correcting themselves — wrong account the first time,
+  // or an old one they no longer use. Refusing would leave the one they don't
+  // want attached and make them go and remove it first.
+  //
+  // Every match is burned, not just the first. The invariant makes more than
+  // one impossible from here on, but a cookie sealed before this rule existed
+  // can still be holding a pair for its twenty minutes, and leaving the spare
+  // valid would mean a proof nothing points at any more still opening doors.
+  const superseded = held.filter(p => p.identity.provider === identity.provider)
+  for (const stale of superseded) await burnProof(event, stale.id)
 
-  const kept = held.filter(p => accountKey(p.identity) !== key)
+  const kept = held.filter(p => p.identity.provider !== identity.provider)
   if (kept.length >= MAX_ATTACHED) {
     // `data.limit` so the challenge routes can tell this apart from a provider
     // going wrong. A reader coming back from a successful sign-in to be shown a

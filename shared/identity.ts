@@ -108,9 +108,10 @@ export interface RequesterIdentity {
  * So being signed in never satisfies a check that wants a proof. Posting a
  * request goes on requiring an attached account no matter who is signed in.
  *
- * A reader may hold several at once, one per account they have attached — see
- * `MAX_ATTACHED`. They accumulate rather than replacing each other, and each
- * carries its own `id` so it can be ended on its own.
+ * A reader may hold several at once, one per *provider* they have attached —
+ * see `MAX_ATTACHED`. Different providers accumulate; a second sign-in at the
+ * same provider replaces what was there. Each carries its own `id` so it can be
+ * ended on its own.
  */
 export interface IdentityProof {
   /**
@@ -131,17 +132,25 @@ export interface IdentityProof {
 }
 
 /**
- * How many accounts one request may carry.
+ * How many accounts one request may carry — at most one per provider, so this
+ * is also a count of distinct services.
  *
  * A reader attaches the profiles they want a sponsor to look at, and more than
  * one is often the honest answer: the Facebook account their friends know them
  * by says nothing checkable, and the GitHub account beside it can be read. Shown
  * together they are worth more than either alone.
  *
- * Bounded for two reasons. The proofs ride in a sealed cookie, which browsers
- * cap at 4KB and which each account costs a few hundred bytes of; and a card on
- * the board with a dozen logos on it stops being evidence and starts being
- * noise, which is the opposite of what the badge is for.
+ * That "together" is why the ceiling counts services rather than logins. Two
+ * accounts at one provider are a weaker pair than the number suggests — the
+ * same person, the same sign-up, the same five minutes if they wanted them —
+ * whereas an account at each of two providers is a claim about a life lived in
+ * two places, which is the thing a sponsor can actually weigh. `issueProof`
+ * keeps the set to one apiece.
+ *
+ * Bounded for two reasons beyond that. The proofs ride in a sealed cookie,
+ * which browsers cap at 4KB and which each account costs a few hundred bytes
+ * of; and a card on the board with a dozen logos on it stops being evidence and
+ * starts being noise, which is the opposite of what the badge is for.
  */
 export const MAX_ATTACHED = 4
 

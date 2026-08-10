@@ -72,6 +72,26 @@ const { data: providers, status } = useFetch<{ challenge: ChallengeOption[] }>(
 const anyProvider = computed(() => providers.value.challenge.length > 0)
 
 /**
+ * The services already spoken for, so the row can say so.
+ *
+ * A set carries one profile per provider and a second sign-in at one replaces
+ * what was there. That is the right behaviour — usually the reader is
+ * correcting themselves — but done silently it looks like a bug: you sign in,
+ * come back, and the count has not moved. Marking the ones already attached
+ * makes a replacement something chosen rather than discovered.
+ *
+ * The buttons stay live. Replacing is a thing a reader may legitimately want,
+ * and it is the only way to swap the wrong account for the right one.
+ */
+const { identities } = useIdentityProof()
+const attachedProviders = computed(() => new Set(identities.value.map(i => i.provider)))
+const isAttached = (id: IdentityProvider) => attachedProviders.value.has(id)
+
+/** Said on the button itself, where the consequence of pressing it is decided. */
+const attachedHint = (label: string) =>
+  `You already have a ${label} profile attached. Signing in again replaces it.`
+
+/**
  * Whether the list has actually arrived, which is a different question from
  * whether it has anything in it.
  *
@@ -93,8 +113,8 @@ const settled = computed(() => status.value === 'success' || status.value === 'e
  * tell a reader how much room they have, not to warn them off using it.
  */
 const allowance = computed(() => props.limit
-  ? `You can attach up to ${props.limit} profiles — several together say more than any one of them alone.`
-  : 'You can attach more than one — several profiles together say more than any of them alone.')
+  ? `You can attach up to ${props.limit} profiles, one per service — several together say more than any one of them alone.`
+  : 'You can attach one profile per service — several together say more than any of them alone.')
 
 /**
  * Set when the reader has just come back from a provider that could not be
@@ -314,6 +334,8 @@ const providerOptions = computed(() => {
               :class="handleFor === provider.id ? 'ring-2 ring-primary' : ''"
               :ui="{ leadingIcon: BRAND[provider.id] }"
               :aria-pressed="handleFor === provider.id"
+              :trailing-icon="isAttached(provider.id) ? 'i-lucide-check' : undefined"
+              :title="isAttached(provider.id) ? attachedHint(provider.label) : undefined"
               @click="choose(provider.id)"
             />
             <UButton
@@ -326,6 +348,8 @@ const providerOptions = computed(() => {
               variant="subtle"
               size="sm"
               :ui="{ leadingIcon: BRAND[provider.id] }"
+              :trailing-icon="isAttached(provider.id) ? 'i-lucide-check' : undefined"
+              :title="isAttached(provider.id) ? attachedHint(provider.label) : undefined"
             />
           </template>
         </div>
