@@ -21,7 +21,8 @@
 // The provider list comes from the server rather than being hard-coded, so a
 // deployment that has credentials for only some of them never shows a button
 // that dead-ends on a configuration error. An empty list is a real state and is
-// drawn as one: no providers, no requests.
+// drawn as one: no providers, no requests — but only once the list has actually
+// arrived, which is a third state and not the same as empty.
 
 import { providerLabel, type IdentityProvider } from '#shared/identity'
 
@@ -54,12 +55,37 @@ const props = withDefaults(defineProps<{
 }>(), { adding: false })
 
 const route = useRoute()
-const { data: providers } = await useFetch<{ challenge: ChallengeOption[] }>(
+
+// `lazy`, so this never holds a page hostage.
+//
+// Awaited, this made the component's setup async, and an async component
+// suspends the whole page it sits on: arriving at Public accounts by a
+// client-side navigation left the *previous* page on screen — menu already
+// shut, nothing moving — until this request landed. On the server it still
+// resolves before the HTML is written (`onServerPrefetch` awaits it either
+// way), so a page loaded directly is complete on arrival, as it was.
+const { data: providers, status } = useFetch<{ challenge: ChallengeOption[] }>(
   '/api/verify/providers',
-  { default: () => ({ challenge: [] }) }
+  { lazy: true, default: () => ({ challenge: [] }) }
 )
 
 const anyProvider = computed(() => providers.value.challenge.length > 0)
+
+/**
+ * Whether the list has actually arrived, which is a different question from
+ * whether it has anything in it.
+ *
+ * An empty `challenge` means two opposite things at two different moments: not
+ * yet, and never. Reading the first as the second tells a reader that requests
+ * can't be posted on this site — the gravest sentence on the page — for as long
+ * as one fetch takes, every time they arrive without a server render. So the
+ * sentence waits until there is an answer to report.
+ *
+ * `error` counts as settled: a list that failed to arrive is not going to, and
+ * a reader is better told the buttons aren't coming than left watching a
+ * placeholder that resolves into nothing.
+ */
+const settled = computed(() => status.value === 'success' || status.value === 'error')
 
 /**
  * The invitation to attach more than one, with the ceiling named where there is
@@ -79,11 +105,20 @@ const allowance = computed(() => props.limit
  * who has done exactly what was invited would be scolding them for it. The only
  * thing worth saying is that a particular attempt had no effect, which is a
  * thing that happened rather than a state to sit in.
+ *
+ * Read during setup rather than on mount, so the server renders it. Set on
+ * mount, it could only appear once hydration had finished — the page arrived
+ * looking like an ordinary success and grew a red paragraph most of a second
+ * later, shoving the section under it down. A reader who has just been sent
+ * back from a provider is looking straight at that spot.
+ *
+ * A plain `ref` and not a computed: the query is stripped a moment later, and
+ * what is being reported is that something happened, not that the URL still
+ * says so.
  */
-const bounced = ref(false)
+const bounced = ref(Boolean(route.query.verifyFull))
 onMounted(() => {
   if (!route.query.verifyFull) return
-  bounced.value = true
 
   // Strip it, so a reload does not go on reporting a sign-in from ten minutes
   // ago. The message is about a thing that just happened, and stops being true
@@ -208,8 +243,45 @@ const providerOptions = computed(() => {
       </div>
     </div>
 
+    <!--
+      The list is still coming. Only reachable on a client-side navigation —
+      a page rendered on the server has the answer before it has any HTML.
+
+      The question is asked now rather than withheld, because it is the same
+      question whatever the answer turns out to be, and standing chips hold the
+      row at its real height so nothing below it moves when the logos land.
+    -->
     <div
-      v-if="anyProvider"
+      v-if="!settled"
+      class="flex flex-col gap-2"
+    >
+      <p class="text-sm font-medium text-highlighted">
+        {{ adding
+          ? 'Attach another profile?'
+          : 'What social media profiles would you like to attach to this request?' }}
+      </p>
+      <!--
+        One row, never two. How many providers are coming is not known until
+        they arrive, so the count here is a guess — and a guess that wraps onto
+        three lines on a phone and then collapses to one drags the whole page
+        up as it resolves, which is worse than holding too little space. So the
+        chips do not wrap and the surplus is clipped: whatever the answer, this
+        occupies exactly the height of a single row of buttons.
+      -->
+      <div
+        class="flex h-8 gap-2 overflow-hidden"
+        aria-hidden="true"
+      >
+        <USkeleton
+          v-for="n in 6"
+          :key="n"
+          class="h-8 w-24 shrink-0 rounded-md"
+        />
+      </div>
+    </div>
+
+    <div
+      v-else-if="anyProvider"
       class="flex flex-col gap-3"
     >
       <div class="flex flex-col gap-2">
@@ -318,6 +390,11 @@ const providerOptions = computed(() => {
       </p>
     </div>
 
+    <!--
+      Settled, and empty. The tail of a three-way chain rather than a plain
+      `v-else` on `anyProvider`, because "we haven't asked yet" must never be
+      drawn as "this site can take no requests".
+    -->
     <p
       v-else
       class="rounded-md bg-elevated/50 p-3 text-sm text-muted"
