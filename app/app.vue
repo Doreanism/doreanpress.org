@@ -72,6 +72,13 @@ useSeoMeta({
 
       <template #right>
         <!--
+          Settings is the site, the account is you, the cart is what you are
+          buying. Three buttons that do not trade places depending on who is
+          looking.
+        -->
+        <AppSettings />
+
+        <!--
           Client-only, because a prerendered page has no reader: `/` is one file
           served to everybody, so whatever this rendered at build time would be
           wrong for all but one of them. The fallback holds the slot so the
