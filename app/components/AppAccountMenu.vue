@@ -26,8 +26,10 @@ async function onSignOut() {
 </script>
 
 <template>
+  <!-- `modal` so the page underneath stays put while this is open — see AppSettings. -->
   <UPopover
     v-model:open="open"
+    modal
     :content="{ align: 'end' }"
   >
     <!--

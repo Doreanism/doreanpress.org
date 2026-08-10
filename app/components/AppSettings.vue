@@ -12,7 +12,16 @@
 </script>
 
 <template>
-  <UPopover :content="{ align: 'end' }">
+  <!--
+    `modal` so the page underneath does not scroll while this is open. Without
+    it a popover only repositions itself as the page moves away beneath it,
+    which on a phone means a flick intended for the menu carries the whole page
+    off instead.
+  -->
+  <UPopover
+    modal
+    :content="{ align: 'end' }"
+  >
     <UButton
       icon="i-lucide-settings"
       color="neutral"
