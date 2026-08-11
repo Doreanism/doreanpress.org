@@ -146,12 +146,20 @@ useSeoMeta({
       </template>
 
       <template #right>
-        <ULink
-          to="/privacy"
-          class="text-sm text-muted hover:text-default"
-        >
-          Privacy
-        </ULink>
+        <div class="flex items-center gap-4">
+          <ULink
+            to="/terms"
+            class="text-sm text-muted hover:text-default"
+          >
+            Terms
+          </ULink>
+          <ULink
+            to="/privacy"
+            class="text-sm text-muted hover:text-default"
+          >
+            Privacy
+          </ULink>
+        </div>
       </template>
     </UFooter>
   </UApp>
