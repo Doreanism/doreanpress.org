@@ -99,6 +99,24 @@ export default defineNuxtConfig({
 
   compatibilityDate: '2025-01-15',
 
+  // Vite refuses requests whose Host header it does not recognise, which is what
+  // stops a page on another site from driving this dev server through the
+  // browser (DNS rebinding). A tunnel is exactly that shape seen from here: the
+  // Host arrives as a trycloudflare.com name and every request 403s.
+  //
+  // Named as a suffix rather than `true` so the exemption is one throwaway
+  // hostname family and not "any host at all" — the quick-tunnel name changes
+  // every restart, so pinning the exact one would mean editing this file each
+  // time. Dev-server only; `nuxt build` never reads it.
+  //
+  // Here to receive Lulu print-job webhooks against a local server. Delete it
+  // once the callbacks are exercised somewhere with a real hostname.
+  vite: {
+    server: {
+      allowedHosts: ['.trycloudflare.com']
+    }
+  },
+
   // Serves the atproto client-metadata document and registers the Bluesky
   // handler. Without it `defineOAuthBlueskyEventHandler` is not imported and the
   // metadata URL 404s, which reads at the provider as a misconfigured client.
