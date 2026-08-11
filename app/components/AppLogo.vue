@@ -1,89 +1,63 @@
 <script setup lang="ts">
 withDefaults(defineProps<{
   markOnly?: boolean
-  /** Tailwind height class for the mark, e.g. 'size-8'. */
+  /**
+   * Tailwind classes sizing the mark. The mark is taller than it is wide, so
+   * set a height and let the width follow — `size-*` would box it into a
+   * square and leave it swimming in its own padding.
+   */
   size?: string
 }>(), {
   markOnly: false,
-  size: 'size-8'
+  size: 'h-8 w-auto'
 })
 </script>
 
 <template>
   <span class="inline-flex items-center gap-2.5 align-middle">
+    <!--
+      The Dorean Principle mark, flattened from the original Inkscape drawing
+      in the `dorean` repo (figs/doreanlogo.svg): the cross, freely received
+      and freely given, without charge. Kept as paths rather than an <img> so
+      it inherits `currentColor` — the mark is a single colour and has to read
+      as dark on the light header and light on the dark one.
+    -->
     <svg
       :class="size"
       class="shrink-0"
-      viewBox="0 0 48 48"
-      fill="none"
+      viewBox="0 0 113.47788 153.92664"
       xmlns="http://www.w3.org/2000/svg"
       role="img"
       aria-label="Dorean Press"
     >
-      <!--
-        The flame carries a fixed warm gradient rather than `--ui-primary`, so
-        it stays orange whichever theme is picked. The candle is white in both
-        colour modes; in light mode it takes a dark outline so it still reads
-        against the white header.
-      -->
-      <defs>
-        <linearGradient
-          id="dp-flame"
-          x1="24"
-          y1="6"
-          x2="24"
-          y2="24"
-          gradientUnits="userSpaceOnUse"
+      <g
+        transform="translate(-128.96745,-66.228484)"
+        fill="currentColor"
+      >
+        <!-- Cross -->
+        <g transform="matrix(1.5484945,0,0,1.5484945,-794.74011,-409.23796)">
+          <path d="m 630.16211,307.05078 v 36.0586 h 6 v -36.0586 z" />
+          <path d="m 621.71484,316.43945 v 6 h 22.89258 v -6 z" />
+        </g>
+        <!-- Freely you have received; freely give -->
+        <g
+          transform="matrix(-1.5576299,0,0,1.5576299,1335.4275,-422.8038)"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="5"
+          stroke-miterlimit="3.7"
         >
-          <stop
-            offset="0"
-            stop-color="#E1372B"
+          <path d="m 701.69568,361.14467 h 66.81738 L 757.3515,349.98311" />
+          <path d="m 774.54859,371.29509 h -66.81738 l 11.16156,11.16156" />
+        </g>
+        <!-- Without charge -->
+        <g transform="matrix(1.2151916,0,0,1.2151916,-594.42878,-95.954558) rotate(-1.5078037)">
+          <path
+            transform="matrix(0.21765434,0.00572914,-0.00572914,0.21765434,591.57602,149.08076)"
+            d="M 216.2832 406.08789 C 214.94597 406.06401 213.58968 406.06928 212.21484 406.10547 C 190.14258 406.68646 173.31967 414.6921 161.74609 430.12109 C 150.17055 445.47528 144.74978 467.06884 145.48242 494.90234 C 146.21309 522.66101 152.76162 543.93949 165.13086 558.73828 C 177.49813 573.46224 194.71875 580.53412 216.79102 579.95312 C 238.78845 579.3741 255.57485 571.40692 267.15039 556.05273 C 278.72396 540.62371 284.14473 519.03015 283.41406 491.27148 C 282.68142 463.43798 276.13094 442.1595 263.76367 427.43555 C 252.16751 413.56171 236.34164 406.4461 216.2832 406.08789 z M 212.99219 435.62305 C 220.22287 435.43272 225.87844 437.9112 229.97461 443.0332 L 189.72852 511.33594 C 189.20441 505.97395 188.85479 500.00566 188.68164 493.42773 C 188.13019 472.47778 189.72578 457.68676 193.4668 449.05273 C 197.20584 440.34393 203.71435 435.86726 212.99219 435.62305 z M 239.68555 480.8418 C 239.92064 484.3615 240.09278 488.10295 240.19727 492.07227 C 240.75462 513.24667 239.16481 528.22613 235.42773 537.00977 C 231.69066 545.7934 225.22057 550.30658 216.01758 550.54883 C 210.14633 550.70337 205.29627 549.08425 201.46094 545.70703 L 239.68555 480.8418 z"
           />
-          <stop
-            offset="1"
-            stop-color="#F5A524"
-          />
-        </linearGradient>
-      </defs>
-
-      <!-- Rising flame: the word given as light -->
-      <path
-        d="M24 6c3.6 4.7 5 8.4 5 11.6 0 3.3-2.2 5.7-5 6.4-2.8-.7-5-3.1-5-6.4 0-3.2 1.4-6.9 5-11.6Z"
-        fill="url(#dp-flame)"
-      />
-      <!-- Open book, left page (a touch translucent, so the spine reads) -->
-      <path
-        d="M24 24.4c-3.7-2.4-8.7-3.2-13.2-2.4-1 .2-1.8 1.1-1.8 2.2v12.2c0 1.3 1.2 2.3 2.5 2.1 3.8-.6 8.1.1 11.3 2.2.7.5 1.5.5 1.2-.9V25.2c0-.3-.1-.6-.4-.8Z"
-        fill="#FFFFFF"
-        opacity="0.92"
-      />
-      <!-- Open book, right page -->
-      <path
-        d="M24 24.4c3.7-2.4 8.7-3.2 13.2-2.4 1 .2 1.8 1.1 1.8 2.2v12.2c0 1.3-1.2 2.3-2.5 2.1-3.8-.6-8.1.1-11.3 2.2-.7.5-1.5.5-1.2-.9V25.2c0-.3.1-.6.4-.8Z"
-        fill="#FFFFFF"
-      />
-      <!--
-        Outline only. Two open subpaths trace the outer edge of each page and
-        meet at the head and foot of the spine without drawing it, so the book
-        gets a silhouette and no line down the middle.
-      -->
-      <path
-        d="M24 24.4c-3.7-2.4-8.7-3.2-13.2-2.4-1 .2-1.8 1.1-1.8 2.2v12.2c0 1.3 1.2 2.3 2.5 2.1 3.8-.6 8.1.1 11.3 2.2.7.5 1.5.5 1.2-.9M24 24.4c3.7-2.4 8.7-3.2 13.2-2.4 1 .2 1.8 1.1 1.8 2.2v12.2c0 1.3-1.2 2.3-2.5 2.1-3.8-.6-8.1.1-11.3 2.2-.7.5-1.5.5-1.2-.9"
-        fill="none"
-        stroke-width="1.6"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="stroke-neutral-900 dark:stroke-0"
-      />
-      <!-- Spine: barely there, just enough to part the two pages -->
-      <path
-        d="M24 26.4v12.6"
-        fill="none"
-        stroke-width="1.2"
-        stroke-linecap="round"
-        opacity="0.2"
-        class="stroke-neutral-900 dark:stroke-0"
-      />
+        </g>
+      </g>
     </svg>
 
     <span
