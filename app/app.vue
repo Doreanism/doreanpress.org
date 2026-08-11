@@ -65,7 +65,7 @@ useSeoMeta({
 
     <UHeader>
       <template #left>
-        <AppLogo size="size-8" />
+        <AppLogo size="h-8 w-auto" />
       </template>
 
       <UNavigationMenu :items="nav" />
@@ -135,7 +135,7 @@ useSeoMeta({
       <template #top>
         <UContainer class="py-8">
           <div class="max-w-md space-y-1">
-            <AppLogo size="size-7" />
+            <AppLogo size="h-7 w-auto" />
             <p class="text-sm text-muted">
               “Freely you have received; freely give.” — Matthew 10:8
             </p>
@@ -147,6 +147,23 @@ useSeoMeta({
         <p class="text-sm text-muted">
           Printed on demand, sold at cost.
         </p>
+      </template>
+
+      <template #right>
+        <div class="flex items-center gap-4">
+          <ULink
+            to="/terms"
+            class="text-sm text-muted hover:text-default"
+          >
+            Terms
+          </ULink>
+          <ULink
+            to="/privacy"
+            class="text-sm text-muted hover:text-default"
+          >
+            Privacy
+          </ULink>
+        </div>
       </template>
     </UFooter>
   </UApp>
