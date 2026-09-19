@@ -103,19 +103,19 @@ useSeoMeta({
     <UPageSection
       :ui="{ container: 'border-t border-default', title: 'font-display' }"
       title="Freely you have received; freely give"
-      description="Dorean Press is a publishing house dedicated to thoughtful books that push back on the commercialization of Christianity. In obedience to Christ’s command in Matthew 10:8, we make every resource freely available and refuse to profit from its distribution."
+      description="Dorean Press is a publishing house dedicated to thoughtful books that push back on the commercialization of Christianity. In obedience to Christ’s command in Matthew 10:8, we make every resource freely available."
       :features="[{
         icon: 'i-lucide-bird',
         title: 'Public Domain',
-        description: 'Every work we publish is dedicated to the public domain and free to read online and download. There are no paywalls and no exceptions.'
+        description: 'Every work we publish is dedicated to the public domain and free to access, reshare, and adapt. There are no paywalls and no exceptions.'
       }, {
         icon: 'i-lucide-printer',
         title: 'Separation of Concerns',
-        description: 'We leave the secular work of printing and binding to third-party printers. Print prices are set to their minimum, so Dorean Press receives no royalties.'
+        description: 'We leave the secular business of charging for physical volumes to third-party printers. Where we have accounts with distributors, we set prices to a minimum so that they profit from their work and we receive no royalties.'
       }, {
         icon: 'i-lucide-hand-heart',
         title: 'Community Generosity',
-        description: 'Readers may request a free printed book, and others may give by covering copies requested by those who cannot pay.'
+        description: 'Readers may request free printed editions, and others may give by covering copies requested by those who cannot pay.'
       }]"
     />
   </div>
