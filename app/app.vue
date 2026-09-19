@@ -149,20 +149,19 @@ useSeoMeta({
         <NuxtPage />
       </UMain>
 
-      <UFooter>
-        <template #top>
-          <UContainer class="py-8">
-            <div class="max-w-md space-y-1">
-              <AppLogo size="h-7 w-auto" />
-              <p class="text-sm text-muted">
-                “Freely you have received; freely give.” — Matthew 10:8
-              </p>
-            </div>
-          </UContainer>
-        </template>
+      <footer class="border-t border-default">
+        <UContainer class="flex flex-col items-start gap-6 py-8 sm:flex-row sm:items-end sm:justify-between">
+          <div class="flex max-w-md flex-col items-start gap-2">
+            <AppLogo size="h-9 w-auto" />
+            <p class="text-sm text-muted">
+              “Freely you have received; freely give.” — Matthew 10:8
+            </p>
+          </div>
 
-        <template #right>
-          <div class="flex items-center gap-4">
+          <nav
+            aria-label="Legal"
+            class="flex shrink-0 items-center gap-5"
+          >
             <ULink
               to="/terms"
               class="text-sm text-muted hover:text-default"
@@ -175,9 +174,9 @@ useSeoMeta({
             >
               Privacy
             </ULink>
-          </div>
-        </template>
-      </UFooter>
+          </nav>
+        </UContainer>
+      </footer>
     </template>
   </UApp>
 </template>

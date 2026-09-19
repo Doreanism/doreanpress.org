@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import doreanLogo from '~/assets/logos/doreanlogo.svg?url'
-import doreanPress from '~/assets/logos/doreanpress.svg?url'
+/* eslint-disable vue/no-v-html -- the rendered strings are trusted local SVG assets */
+import doreanLogo from '~/assets/logos/doreanlogo.svg?raw'
+import doreanPress from '~/assets/logos/doreanpress.svg?raw'
 
 const props = withDefaults(defineProps<{
   markOnly?: boolean
@@ -19,14 +20,15 @@ const proportions = computed(() => props.markOnly ? '113.47788 / 153.92664' : '8
   <NuxtLink
     to="/"
     :class="size"
-    class="inline-block shrink-0 bg-current text-highlighted"
+    class="inline-block shrink-0 text-highlighted"
     aria-label="Dorean Press"
-    :style="{
-      aspectRatio: proportions,
-      maskImage: `url(${artwork})`,
-      maskPosition: 'center',
-      maskRepeat: 'no-repeat',
-      maskSize: 'contain'
-    }"
-  />
+    :style="{ aspectRatio: proportions }"
+  >
+    <!-- The markup is a trusted, repository-owned SVG whose paths use currentColor. -->
+    <span
+      class="block h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+      aria-hidden="true"
+      v-html="artwork"
+    />
+  </NuxtLink>
 </template>
