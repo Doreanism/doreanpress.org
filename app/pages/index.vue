@@ -22,16 +22,16 @@ useSeoMeta({
         <img
           src="/covers/the-doctrine-of-simony-plate.webp"
           alt=""
-          class="h-full w-full scale-105 object-cover object-top opacity-35 saturate-75 dark:opacity-20 dark:saturate-50"
+          class="h-full w-full scale-105 object-cover object-top opacity-70 saturate-90 contrast-105 dark:opacity-45 dark:saturate-60"
         >
       </div>
       <div
         aria-hidden="true"
-        class="absolute inset-0 -z-10 bg-linear-to-r from-default via-default/95 to-default/45 dark:via-default/90 dark:to-default/60"
+        class="absolute inset-0 -z-10 bg-linear-to-r from-default/85 via-default/65 to-default/5 dark:from-default/90 dark:via-default/70 dark:to-default/20"
       />
       <div
         aria-hidden="true"
-        class="absolute top-1/2 right-[-8rem] -z-10 h-[32rem] w-[32rem] -translate-y-1/2 rounded-full bg-amber-300/20 blur-3xl dark:bg-amber-700/10"
+        class="absolute top-1/2 right-[-8rem] -z-10 h-[32rem] w-[32rem] -translate-y-1/2 rounded-full bg-amber-300/30 blur-3xl dark:bg-amber-700/15"
       />
       <div
         aria-hidden="true"
