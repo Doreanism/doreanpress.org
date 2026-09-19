@@ -65,9 +65,9 @@ async function onSignOut() {
         color="neutral"
         variant="ghost"
         :aria-label="signedIn
-          ? `Your account and settings — signed in as ${signedIn.email}`
+          ? `Your account and settings — signed in as ${signedIn.label}`
           : 'Your account and settings'"
-        :title="signedIn ? signedIn.email : 'Account and settings'"
+        :title="signedIn ? signedIn.label : 'Account and settings'"
       />
     </UChip>
 
@@ -77,7 +77,7 @@ async function onSignOut() {
           v-if="signedIn"
           class="truncate px-2 pt-1.5 pb-1 text-xs font-medium text-muted"
         >
-          {{ signedIn.email }}
+          {{ signedIn.label }}
         </p>
 
         <UButton
@@ -92,10 +92,9 @@ async function onSignOut() {
         />
 
         <!--
-          The count is the accounts this browser is holding right now, not a
-          total kept against the address — they lapse after twenty minutes.
-          Shown because its absence is the useful signal: no number means a
-          request would ask you to attach one first.
+          The count is the durable provider identities linked to this account.
+          Its absence is useful too: no number means a request will ask the
+          reader to attach a public profile first.
         -->
         <UButton
           to="/profiles"

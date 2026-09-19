@@ -36,7 +36,7 @@ const request = useRequestFetch()
 
 const { data: orders, refresh: refreshOrders } = await useAsyncData(
   'orders',
-  () => signedIn.value
+  () => signedIn.value?.email
     ? request<{
         email: string
         requested: OrderLine[]
@@ -108,14 +108,16 @@ function formatDate(iso: string) {
     <UPageHeader
       :ui="{ title: 'font-display' }"
       title="Orders"
-      :description="signedIn
+      :description="signedIn?.email
         ? `Everything ${signedIn.email} is waiting for, has given, or has bought.`
-        : 'Sign in with your email to see the books coming to you and the ones you have given.'"
+        : signedIn
+          ? `Signed in as ${signedIn.label}. Add an email address to see orders placed by email.`
+          : 'Sign in with your email to see the books coming to you and the ones you have given.'"
     />
 
     <!-- Signed out: ask for an address, then for the code that lands in it. -->
     <div
-      v-if="!signedIn"
+      v-if="!signedIn || !signedIn.email"
       class="mt-10 max-w-md"
     >
       <form
@@ -168,9 +170,9 @@ function formatDate(iso: string) {
       </form>
 
       <p class="mt-6 text-sm text-muted">
-        Signing in shows you your own orders. Asking for a free book is separate —
-        that still means attaching a public account, so a giver can see who they
-        are giving to.
+        {{ signedIn
+          ? 'Verifying an email links its orders to the account you already opened with a public profile.'
+          : 'You can also sign in by authenticating any public account you previously attached.' }}
       </p>
     </div>
 

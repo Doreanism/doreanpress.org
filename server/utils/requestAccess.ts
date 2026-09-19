@@ -67,7 +67,7 @@ export async function requireRequestOwner(event: H3Event, request: BookRequest) 
   // the account is what a giver is shown, and no email address tells them
   // anything. See `requireIdentities` in the request handler.
   const signedIn = await readSignedIn(event)
-  if (signedIn && normalizeEmail(request.email) === signedIn.email) return
+  if (signedIn?.email && normalizeEmail(request.email) === signedIn.email) return
 
   if (request.requesters.length === 0) return
 

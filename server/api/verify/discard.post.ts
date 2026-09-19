@@ -1,7 +1,6 @@
 // Detach an account the reader attached — one of them, or all of them.
 //
-// Burns what it removes rather than only dropping the cookie: a proof the reader
-// has deliberately walked away from should be as dead as one that was used.
+// Removes the durable provider link from the reader's database account.
 // Quiet when there is nothing to discard — the reader's intent ("that account is
 // not on this request") is satisfied either way, and a 404 here would only be
 // noise.

@@ -16,7 +16,7 @@
 //   /verify/youface?redirect=/give&name=Mister%20Developer&handle=misterdeveloper
 //
 // Click it repeatedly to attach several — each click invents a different person,
-// so they accumulate up to MAX_ATTACHED rather than replacing one another.
+// and multiple identities from the same provider are supported.
 
 /**
  * Invented people, named so nobody has to work out that they are invented.

@@ -1,226 +1,41 @@
-// Reading and ending completed identity challenges.
+// Durable public identities attached to a reader account.
 //
-// The whole lifecycle is: a reader raises a challenge, the provider hands them
-// back, and the proof sits in a sealed cookie until it lapses or they discard
-// it. Nothing here logs anybody in, and a proof that has ended is simply gone.
-//
-// Logging in is `server/utils/signedIn.ts`, which shares this cookie and is not
-// this. A proof is evidence about a public account, aimed at a giver, and is
-// short because it asserts a moment. A sign-in is an inbox, aimed at us, and
-// lasts. Neither substitutes for the other, and the one place that could blur
-// them — `readProofs` — deliberately filters on `confirmation` and freshness so
-// that whatever else is in the cookie, only real proofs come out.
-//
-// A reader may attach several accounts to one request, so the cookie holds a
-// *set* of proofs rather than one. Checking an account at a provider they have
-// not used yet therefore adds to what is held instead of replacing it — which
-// is the one behaviour to keep in mind when changing anything below, because
-// the earliest version of this file burned the old proof on *every* new check
-// and reintroducing that would silently drop the account a reader attached a
-// moment ago.
-//
-// Replacement is scoped to the provider, and only to the provider. A set holds
-// at most one profile apiece, so signing into a second Facebook account stands
-// in for the first — but it must never touch the GitHub account sitting beside
-// it. The distinction is the whole difference between the rule and the bug: one
-// burns the proofs that a new one supersedes, the other burns the lot.
-//
-// Within that window what is held covers everything the reader does: post a
-// request, correct it, take it down. Each proof asserts one thing — this account
-// is here — and the first action does not make that less true. Burning them per
-// action instead put a full round trip to the provider in front of every click,
-// which readers experienced as having to press each button twice.
-//
-// Ending has to be recorded server-side. Clearing the cookie only asks the
-// browser to forget it; the sealed value itself stays cryptographically valid
-// until it expires, so a copy kept anywhere else — a proxy log, a shared
-// machine, a curl session — would otherwise go on working. Recording the id is
-// what makes "over" true rather than merely polite.
+// Provider callbacks authenticate an identity once and persist it in Postgres.
+// The sealed browser cookie contains only the internal account id and a compact
+// sign-in summary; full provider profiles never ride in the cookie. This removes
+// the old four-profile ceiling and lets any attached provider identity recover
+// the same account on a later browser.
 
 import type { H3Event } from 'h3'
-import { accountKey, MAX_ATTACHED, type IdentityProof, type RequesterIdentity } from '#shared/identity'
+import type { IdentityProof, RequesterIdentity } from '#shared/identity'
+import { attachIdentity, detachIdentity, listAttachedIdentities } from './readerAccounts'
 
-let schema: Promise<void> | null = null
-function ensureSchema() {
-  if (!schema) {
-    schema = db()`
-      CREATE TABLE IF NOT EXISTS spent_proofs (
-        id       text PRIMARY KEY,
-        spent_at text NOT NULL
-      )
-    `.then(() => undefined).catch((err) => {
-        schema = null
-        throw err
-      })
-  }
-  return schema
-}
-
-/**
- * How long a proof is worth anything.
- *
- * This used to be the session cookie's own `maxAge`, which worked only while the
- * cookie held nothing but proofs: it expired, they went with it, and no code had
- * to think about it. The cookie now also carries a sign-in that is meant to last
- * weeks, so leaning on its lifetime would quietly extend a twenty-minute proof
- * to a thirty-day one — and a proof is evidence that someone was at the provider
- * *just now*, which is the whole reason it is short.
- *
- * So the window is stated here and enforced against each proof's own
- * `verifiedAt`, independent of whatever the cookie outlives.
- */
-export const PROOF_TTL_MS = 20 * 60 * 1000
-
-function proofLifetimeMs(): number {
-  return PROOF_TTL_MS
-}
-
-/** Whether this proof was minted recently enough to still mean anything. */
-function isFresh(verifiedAt: string | undefined): boolean {
-  const at = Date.parse(verifiedAt ?? '')
-  return Number.isFinite(at) && Date.now() - at < PROOF_TTL_MS
-}
-
-async function isSpent(id: string): Promise<boolean> {
-  await ensureSchema()
-  const rows = await db()`SELECT 1 FROM spent_proofs WHERE id = ${id}`
-  return rows.length > 0
-}
-
-/**
- * Mark a proof id as used up, so it is refused from then on.
- *
- * Exported because a proof can be ended two ways short of lapsing, and both are
- * final: deliberately abandoned (the reader wants to show a different account),
- * or replaced by a fresh challenge. Burning both keeps "this proof is over" from
- * depending on the browser having dropped a cookie.
- */
-export async function burnProof(event: H3Event, id: string): Promise<void> {
-  await ensureSchema()
-  const sql = db()
-  await sql`
-    INSERT INTO spent_proofs (id, spent_at)
-    VALUES (${id}, ${new Date().toISOString()})
-    ON CONFLICT (id) DO NOTHING
-  `
-
-  // A proof cannot outlive its cookie, so once that window has passed the row
-  // guards nothing. Pruned here rather than on a schedule: this path is rare,
-  // and it keeps the table bounded without anything else to run. Doubled to stay
-  // clear of clock skew between instances.
-  const cutoff = new Date(Date.now() - proofLifetimeMs() * 2).toISOString()
-  await sql`DELETE FROM spent_proofs WHERE spent_at < ${cutoff}`
-}
-
-/**
- * Seal a checked account into the cookie, alongside any already there.
- *
- * The one place a proof is minted, for either kind of check — the challenge
- * routes, the lookup endpoint and the claim endpoint all land here, so there is
- * a single answer to "where do proofs come from" and a single place the
- * `confirmation` recorded on one can be trusted to have come from the code that
- * actually did the checking.
- *
- * Attaching at a provider already attached replaces what was there rather than
- * doubling it, and burns the proof it replaces: the fresher check is the one
- * that should be spendable, and leaving the stale id valid would mean a proof
- * nothing points at any more still opening doors. This holds whether or not it
- * is the same account — a set carries at most one profile per provider.
- *
- * Stored under `proofs`, never `user`: this is evidence, not a session.
- */
 export async function issueProof(
   event: H3Event,
   identity: Omit<RequesterIdentity, 'verifiedAt'>,
   email?: string
 ): Promise<void> {
-  const held = await readProofs(event)
-
-  // One account per provider, so a second sign-in at the same one replaces the
-  // first rather than sitting beside it.
-  //
-  // Four Facebook accounts are not four things a sponsor can weigh. The badge
-  // is worth something because an account with a history costs time to build,
-  // and that cost is per person, not per login: anybody willing to make one
-  // throwaway can make four, so a card carrying four of them looks four times
-  // as established while being no more evidence than one. Breadth across
-  // providers is the thing that is actually hard to fake, and it is what the
-  // allowance is for.
-  //
-  // Replace rather than refuse, because the reader who signs in twice at one
-  // provider is usually correcting themselves — wrong account the first time,
-  // or an old one they no longer use. Refusing would leave the one they don't
-  // want attached and make them go and remove it first.
-  //
-  // Every match is burned, not just the first. The invariant makes more than
-  // one impossible from here on, but a cookie sealed before this rule existed
-  // can still be holding a pair for its twenty minutes, and leaving the spare
-  // valid would mean a proof nothing points at any more still opening doors.
-  const superseded = held.filter(p => p.identity.provider === identity.provider)
-  for (const stale of superseded) await burnProof(event, stale.id)
-
-  const kept = held.filter(p => p.identity.provider !== identity.provider)
-  if (kept.length >= MAX_ATTACHED) {
-    // `data.limit` so the challenge routes can tell this apart from a provider
-    // going wrong. A reader coming back from a successful sign-in to be shown a
-    // bare 400 page has done nothing wrong and has lost their place; the routes
-    // turn this into a message beside the accounts instead.
-    throw createError({
-      statusCode: 400,
-      statusMessage: `You can attach up to ${MAX_ATTACHED} profiles to a request. Remove one to add another.`,
-      data: { limit: true }
-    })
+  const verified: RequesterIdentity = {
+    ...identity,
+    verifiedAt: new Date().toISOString()
   }
-
-  const proof: IdentityProof = {
-    id: crypto.randomUUID(),
-    identity: { ...identity, verifiedAt: new Date().toISOString() },
-    email: email || undefined
-  }
-
-  // `replaceUserSession`, not `setUserSession`: the latter merges the new value
-  // over the old one key by key, which for an array means the shorter list
-  // leaving the tail of the longer one in place — so removing an account would
-  // not take. The whole set is written every time.
-  await replaceUserSession(event, { proofs: [...kept, proof] })
-}
-
-/** Every account attached and still unspent, in the order attached. */
-export async function readProofs(event: H3Event): Promise<IdentityProof[]> {
-  const session = await getUserSession(event)
-  const held = session.proofs ?? []
-  if (held.length === 0) return []
-
-  // Nothing short of a signed-in account is honoured, whatever is in the cookie.
-  //
-  // Issuing already guarantees this — `completeChallenge` is the only way a
-  // proof is minted and it stamps `control` itself — so this is about the twenty
-  // minutes after the weaker routes were withdrawn, when a reader could still be
-  // holding a sealed, unexpired, perfectly valid proof of an account they merely
-  // named. Refusing it here rather than at each of the four places a proof is
-  // spent means there is one answer to "what counts", and it does not depend on
-  // remembering to ask.
-  const proved = held.filter(p => p?.identity?.confirmation === 'control')
-
-  // Lapsed proofs are dropped here rather than left to the cookie, which now
-  // outlives them by weeks. Without this, signing in would hand a reader a
-  // thirty-day proof of a moment at the provider.
-  const fresh = proved.filter(p => isFresh(p?.identity?.verifiedAt))
-
-  // Each id is checked, not just the first: proofs end one at a time, so a set
-  // can hold a spent one beside live ones.
-  const live = await Promise.all(
-    fresh.map(async proof => (proof?.id && !(await isSpent(proof.id)) ? proof : null))
-  )
-  return live.filter((p): p is IdentityProof => p !== null)
+  const signedIn = await attachIdentity(event, verified, email)
+  await replaceUserSession(event, { accountId: signedIn.accountId, signedIn })
 }
 
 /**
- * The accounts attached, or a 401 the client turns into a challenge prompt.
- *
- * `action` completes the sentence "attach a public account before …", so the
- * message names what the reader was trying to do.
+ * The historical name is retained for callers: these are now durable database
+ * records rather than short-lived proof objects sealed into a cookie.
  */
+export async function readProofs(event: H3Event): Promise<IdentityProof[]> {
+  const { identities, email } = await listAttachedIdentities(event)
+  return identities.map(identity => ({
+    id: `${identity.provider}:${identity.subject}`,
+    identity,
+    email
+  }))
+}
+
 export async function requireProofs(event: H3Event, action: string): Promise<IdentityProof[]> {
   const proofs = await readProofs(event)
   if (proofs.length === 0) {
@@ -232,27 +47,10 @@ export async function requireProofs(event: H3Event, action: string): Promise<Ide
   return proofs
 }
 
-/** Just the accounts, which is what everything downstream of a check wants. */
 export async function requireIdentities(event: H3Event, action: string): Promise<RequesterIdentity[]> {
-  return (await requireProofs(event, action)).map(p => p.identity)
+  return (await requireProofs(event, action)).map(proof => proof.identity)
 }
 
-/**
- * End one attached account, or all of them.
- *
- * Record each id as finished, then write back what is left. For when the reader
- * is deliberately done with an account — removing one they attached, or starting
- * over — not after each action they take with it. Actions leave proofs alone and
- * let them lapse on their own, which is what keeps a second action from
- * demanding a second trip to the provider.
- */
 export async function discardProofs(event: H3Event, key?: string): Promise<void> {
-  const held = await readProofs(event)
-  const going = key ? held.filter(p => accountKey(p.identity) === key) : held
-  const staying = key ? held.filter(p => accountKey(p.identity) !== key) : []
-
-  if (staying.length > 0) await replaceUserSession(event, { proofs: staying })
-  else await clearUserSession(event)
-
-  for (const proof of going) await burnProof(event, proof.id)
+  await detachIdentity(event, key)
 }

@@ -49,17 +49,11 @@ If a future change is tempted to add a rung back: the test is not "can we check
 this cheaply", it is "does this tell a sponsor who they are paying". Being
 checkable was never the point.
 
-### Nothing weaker is honoured, including proofs already issued
+### Nothing weaker is honoured
 
 `completeChallenge` stamps `control` itself, so no adapter can claim it for
-something weaker. That covers issuance. It does not cover the sealed cookies
-already in readers' browsers when the weaker routes were withdrawn — a proof of a
-merely-named account stayed cryptographically valid for up to twenty minutes
-afterwards.
-
-So `readProofs` filters on `confirmation === 'control'` and is the single answer
-to "what counts". Doing it there rather than at each of the four places a proof
-is spent means the rule does not depend on remembering to ask.
+something weaker. Only identities created by those provider callbacks enter the
+durable account tables.
 
 ### Rows already on the board keep their own verdict
 
@@ -111,41 +105,24 @@ requests. Without it, `configuredProviders` returning empty means the site
 accepts nothing at all — which is the honest failure, and stated as such on the
 form.
 
-## It's a challenge, not a login
+## Provider identities are durable sign-ins
 
-There are no accounts on this site. Completing the round trip to a provider
-leaves a short-lived **proof** in a sealed cookie. It lasts twenty minutes and
-covers whatever the reader does in that window — post a request, correct it, take
-it down — and then lapses. `discardProofs` in `server/utils/identityProof.ts`
-ends one early, which is what "Remove" on an attached profile does.
+Completing a provider round trip creates or refreshes a row in
+`reader_identities`, linked to an internal `reader_accounts` row. Authenticating
+any identity already in that set recovers the same reader account on a new
+browser. Email-code sign-in links an inbox to that account rather than creating a
+parallel identity silo.
 
-The cookie holds a *set* of them, up to `MAX_ATTACHED`. A reader attaches the
-profiles they want a sponsor to look at, and more than one is often the honest
-answer: the Facebook account their friends know them by says nothing checkable,
-and the GitHub account beside it can be read. Checking a second account adds to
-what is held rather than replacing it — re-checking one already attached replaces
-just that entry, and burns the proof it replaces.
+The sealed cookie carries only the opaque reader-account id and a compact sign-in
+label. Full provider profiles live in Postgres, so browser cookie size no longer
+sets an arbitrary profile limit. Multiple profiles from the same service are
+allowed; `(provider, subject)` is globally unique, preventing the same social
+identity from being linked to two reader accounts.
 
-That shape is deliberate:
-
-- Nothing to register, no password, no profile to maintain, nothing to delete.
-- No persistent identity in the header, and no sign-out, because there is no
-  session to end.
-- A stolen or stale cookie is worth little: it acts as the accounts it holds,
-  for twenty minutes, and only on their own posting.
-
-It used to be spent the instant its first action landed. That read well in the
-abstract and badly in the hand: a reader who posted a request and then wanted it
-back down had to go to the provider and return a second time, so every button
-took two presses to do one thing. A proof asserts that an account is here, and
-the first action does not make that any less true — so it is left alone until it
-lapses.
-
-`nuxt-auth-utils` supplies the OAuth dance and the sealed cookie. Its *account*
-model is not used: nothing is ever stored under `session.user`, so
-`useUserSession().loggedIn` is always false by design. Read what is held through
-`useIdentityProof()` on the client and `readProofs` / `requireProofs` /
-`requireIdentities` on the server.
+`useIdentityProof()` reads the durable set through `/api/verify/accounts`.
+`readProofs` / `requireProofs` / `requireIdentities` retain their historical names
+as the authorization boundary for request code, but their source is now the
+database rather than a short-lived cookie payload.
 
 ## What this does and doesn't claim
 
@@ -340,8 +317,9 @@ Register the callback URL as `<site>/verify/<provider>` — e.g.
   requests it, and TikTok refuses the sign-in for a key that lacks it.
 
 Then fill in the `NUXT_OAUTH_*` pairs and `NUXT_SESSION_PASSWORD` (see
-`.env.example`). Rotating the session password invalidates proofs in flight,
-which at worst means somebody verifies again.
+`.env.example`). Rotating the session password signs browsers out; their linked
+provider identities remain in the database and any one can authenticate them
+again.
 
 ## No stand-in, anywhere
 

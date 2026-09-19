@@ -5,7 +5,6 @@ import {
   confirmationClaim,
   providerIcon,
   providerLabel,
-  MAX_ATTACHED,
   type RequesterIdentity
 } from '#shared/identity'
 
@@ -15,12 +14,8 @@ import {
 // actually reads about a reader could only be set up while filling in an
 // address. Here it stands on its own.
 //
-// What it cannot pretend: an attached account is not stored against anybody. A
-// proof is evidence of a moment at a provider, it lasts twenty minutes, and it
-// is spent on the request it was raised for. So this page shows what this
-// browser is holding *now* rather than a list on file, and says so — the
-// alternative is a page that looks like a saved setting and quietly empties
-// itself while the reader is making tea.
+// Provider identities are durable account links. Authenticating any one of
+// them on a later browser recovers this same set.
 
 const { identities, refresh } = useIdentityProof()
 
@@ -69,15 +64,14 @@ async function detach(identity: RequesterIdentity) {
     <div class="mt-10 flex max-w-2xl flex-col gap-8">
       <div class="flex flex-col gap-3">
         <h2 class="font-display text-lg font-semibold text-highlighted">
-          Attached now
+          Attached accounts
         </h2>
 
         <div
           v-if="identities.length === 0"
           class="rounded-lg bg-elevated/50 p-4 text-sm text-muted"
         >
-          Nothing attached at the moment. Attaching one below holds it for about
-          twenty minutes — long enough to post a request with it.
+          Nothing attached yet. Attach a public account below.
         </div>
 
         <ul
@@ -140,17 +134,14 @@ async function detach(identity: RequesterIdentity) {
           landing somewhere else afterwards reads as having lost your place.
         -->
         <IdentityChallenge
-          :limit="MAX_ATTACHED"
           :redirect="route.fullPath"
           adding
         />
       </div>
 
       <p class="text-sm text-muted">
-        These are held by this browser for about twenty minutes and are not saved
-        to your account — they are evidence that you were just at the provider,
-        which is the thing that makes them worth anything to a giver. Signing in
-        by email is separate, and does not attach anything.
+        These profiles are saved to your Dorean Press account. Signing in through
+        any attached provider restores the same account and its other profiles.
       </p>
     </div>
   </UContainer>

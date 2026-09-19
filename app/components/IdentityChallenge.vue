@@ -1,10 +1,9 @@
 <script setup lang="ts">
 // Puts a public account behind a request, by signing into it.
 //
-// Not a login here either — there is no account to create on this site, no
-// password of ours, and nothing is remembered afterwards. The reader goes to a
-// provider they already have an account with, that provider tells us who they
-// are, and we keep the answer for twenty minutes.
+// The reader goes to a provider they already have an account with, that provider
+// tells us who they are, and the identity becomes a durable sign-in method for
+// their Dorean Press account.
 //
 // This used to offer three routes: sign in, or name an account for us to fetch,
 // or simply tell us about one. The bottom two are gone. They asked a sponsor to
@@ -41,17 +40,6 @@ const props = withDefaults(defineProps<{
    * then; repeating it above every extra profile would be nagging.
    */
   adding?: boolean
-  /**
-   * How many profiles the thing being attached to can carry, where there is a
-   * limit — so the allowance is stated before the reader starts rather than
-   * discovered by hitting it.
-   *
-   * Left undefined when the reader is proving one particular account instead of
-   * building a set, as on the withdraw page: a number there would answer a
-   * question nobody asked, and imply they should attach four to take one
-   * request down.
-   */
-  limit?: number
 }>(), { adding: false })
 
 const route = useRoute()
@@ -82,22 +70,19 @@ const anyProvider = computed(() => challengeOptions.value.length > 0)
 /**
  * The services already spoken for, so the row can say so.
  *
- * A set carries one profile per provider and a second sign-in at one replaces
- * what was there. That is the right behaviour — usually the reader is
- * correcting themselves — but done silently it looks like a bug: you sign in,
- * come back, and the count has not moved. Marking the ones already attached
- * makes a replacement something chosen rather than discovered.
- *
- * The buttons stay live. Replacing is a thing a reader may legitimately want,
- * and it is the only way to swap the wrong account for the right one.
+ * A check means at least one identity from that provider is already linked.
+ * The button stays live because readers may attach multiple accounts from the
+ * same service; authenticating one already present simply refreshes its data.
  */
 const { identities } = useIdentityProof()
-const attachedProviders = computed(() => new Set(identities.value.map(i => i.provider)))
-const isAttached = (id: IdentityProvider) => attachedProviders.value.has(id)
+const attachedCount = (id: IdentityProvider) => identities.value.filter(i => i.provider === id).length
+const isAttached = (id: IdentityProvider) => attachedCount(id) > 0
 
 /** Said on the button itself, where the consequence of pressing it is decided. */
-const attachedHint = (label: string) =>
-  `You already have a ${label} profile attached. Signing in again replaces it.`
+const attachedHint = (id: IdentityProvider, label: string) => {
+  const count = attachedCount(id)
+  return `${count} ${label} ${count === 1 ? 'profile' : 'profiles'} attached. You may attach another.`
+}
 
 /**
  * Whether the list has actually arrived, which is a different question from
@@ -115,46 +100,7 @@ const attachedHint = (label: string) =>
  */
 const settled = computed(() => status.value === 'success' || status.value === 'error')
 
-/**
- * The invitation to attach more than one, with the ceiling named where there is
- * one. Said as an allowance rather than a restriction: the number is here to
- * tell a reader how much room they have, not to warn them off using it.
- */
-const allowance = computed(() => props.limit
-  ? `You can attach up to ${props.limit} profiles, one per service — several together say more than any one of them alone.`
-  : 'You can attach one profile per service — several together say more than any of them alone.')
-
-/**
- * Set when the reader has just come back from a provider that could not be
- * attached because the set was already full.
- *
- * Deliberately not driven by the count. Holding the maximum is a fine place to
- * be — it is the allowance, taken up — and colouring the page red for a reader
- * who has done exactly what was invited would be scolding them for it. The only
- * thing worth saying is that a particular attempt had no effect, which is a
- * thing that happened rather than a state to sit in.
- *
- * Read during setup rather than on mount, so the server renders it. Set on
- * mount, it could only appear once hydration had finished — the page arrived
- * looking like an ordinary success and grew a red paragraph most of a second
- * later, shoving the section under it down. A reader who has just been sent
- * back from a provider is looking straight at that spot.
- *
- * A plain `ref` and not a computed: the query is stripped a moment later, and
- * what is being reported is that something happened, not that the URL still
- * says so.
- */
-const bounced = ref(Boolean(route.query.verifyFull))
-onMounted(() => {
-  if (!route.query.verifyFull) return
-
-  // Strip it, so a reload does not go on reporting a sign-in from ten minutes
-  // ago. The message is about a thing that just happened, and stops being true
-  // the moment it stops being recent.
-  const query = { ...route.query }
-  delete query.verifyFull
-  useRouter().replace({ query })
-})
+const allowance = 'You can attach multiple profiles, including more than one account from the same service.'
 
 function challengeUrl(provider: IdentityProvider, handle?: string) {
   const params = new URLSearchParams({ redirect: props.redirect || route.fullPath })
@@ -343,7 +289,7 @@ const providerOptions = computed(() => {
               :ui="{ leadingIcon: BRAND[provider.id] }"
               :aria-pressed="handleFor === provider.id"
               :trailing-icon="isAttached(provider.id) ? 'i-lucide-check' : undefined"
-              :title="isAttached(provider.id) ? attachedHint(provider.label) : undefined"
+              :title="isAttached(provider.id) ? attachedHint(provider.id, provider.label) : undefined"
               @click="choose(provider.id)"
             />
             <UButton
@@ -357,33 +303,10 @@ const providerOptions = computed(() => {
               size="sm"
               :ui="{ leadingIcon: BRAND[provider.id] }"
               :trailing-icon="isAttached(provider.id) ? 'i-lucide-check' : undefined"
-              :title="isAttached(provider.id) ? attachedHint(provider.label) : undefined"
+              :title="isAttached(provider.id) ? attachedHint(provider.id, provider.label) : undefined"
             />
           </template>
         </div>
-
-        <!--
-          Said here, under the buttons, rather than thrown as a 400 page: a
-          reader who has just signed in at a provider and been sent back has
-          done nothing wrong, and an error page loses their place.
-
-          Only after an attempt that did not take. Sitting at the maximum is not
-          a problem and is not marked as one.
-
-          The buttons stay live on purpose. Signing into an account that is
-          already attached is still allowed at the ceiling — it replaces that
-          one rather than adding a fifth — so disabling them would block the one
-          thing a full reader might legitimately want to do.
-        -->
-        <p
-          v-if="bounced"
-          class="text-sm font-medium text-red-500 dark:text-red-400"
-          role="status"
-        >
-          That account wasn't added — you already have {{ props.limit }} profiles
-          attached, which is as many as one request can carry. Remove one to make
-          room for it.
-        </p>
       </div>
 
       <UFormField

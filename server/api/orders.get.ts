@@ -18,6 +18,12 @@ import { toGivenView, toMineView } from '../utils/orderViews'
 
 export default defineEventHandler(async (event) => {
   const { email } = await requireSignedIn(event, 'seeing your orders')
+  if (!email) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Add an email address to this account before viewing email orders.'
+    })
+  }
 
   const [requested, sponsored, purchased] = await Promise.all([
     listRequestsForEmail(email),

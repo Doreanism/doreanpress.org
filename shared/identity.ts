@@ -90,28 +90,9 @@ export interface RequesterIdentity {
 /**
  * A completed identity challenge, for one account.
  *
- * Evidence that whoever holds it controlled `identity` at `verifiedAt` — and
- * nothing more. It is deliberately not a login: it is raised for one action,
- * stamped onto that action, and spent.
- *
- * There is now a login, and it is a different thing that lives in the same
- * sealed cookie — signing in by a code mailed to an address, so a reader can be
- * shown their own orders (`server/utils/signedIn.ts`). Keep the two apart:
- *
- *   a proof says a public account is yours. It is minted at the provider, worth
- *   twenty minutes, and is what a stranger deciding whether to spend money on
- *   you is shown.
- *
- *   a sign-in says an inbox is yours. It is worth weeks, and says nothing to
- *   anybody but us — an email address is not evidence a giver can weigh.
- *
- * So being signed in never satisfies a check that wants a proof. Posting a
- * request goes on requiring an attached account no matter who is signed in.
- *
- * A reader may hold several at once, one per *provider* they have attached —
- * see `MAX_ATTACHED`. Different providers accumulate; a second sign-in at the
- * same provider replaces what was there. Each carries its own `id` so it can be
- * ended on its own.
+ * Provider identities are persisted in Postgres and double as sign-in methods:
+ * authenticating any attached identity recovers the same reader account. This
+ * wrapper remains as the boundary consumed by request authorization code.
  */
 export interface IdentityProof {
   /**
@@ -130,29 +111,6 @@ export interface IdentityProof {
    */
   email?: string
 }
-
-/**
- * How many accounts one request may carry — at most one per provider, so this
- * is also a count of distinct services.
- *
- * A reader attaches the profiles they want a sponsor to look at, and more than
- * one is often the honest answer: the Facebook account their friends know them
- * by says nothing checkable, and the GitHub account beside it can be read. Shown
- * together they are worth more than either alone.
- *
- * That "together" is why the ceiling counts services rather than logins. Two
- * accounts at one provider are a weaker pair than the number suggests — the
- * same person, the same sign-up, the same five minutes if they wanted them —
- * whereas an account at each of two providers is a claim about a life lived in
- * two places, which is the thing a sponsor can actually weigh. `issueProof`
- * keeps the set to one apiece.
- *
- * Bounded for two reasons beyond that. The proofs ride in a sealed cookie,
- * which browsers cap at 4KB and which each account costs a few hundred bytes
- * of; and a card on the board with a dozen logos on it stops being evidence and
- * starts being noise, which is the opposite of what the badge is for.
- */
-export const MAX_ATTACHED = 4
 
 /** Strongest first, for sorting and for picking the one that speaks for a set. */
 const CONFIRMATION_RANK: Record<Confirmation, number> = {

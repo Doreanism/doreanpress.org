@@ -5,10 +5,7 @@
 // module-level ref: the server renders for one reader at a time and a shared
 // module ref would leak one reader's address into another's page.
 
-export interface SignedIn {
-  email: string
-  at: string
-}
+import type { SignedIn } from '#shared/account'
 
 export function useSignedIn() {
   const signedIn = useState<SignedIn | null>('signed-in', () => null)
@@ -55,6 +52,7 @@ export function useSignedIn() {
   async function signOut() {
     await $fetch('/api/auth/signout', { method: 'POST' })
     signedIn.value = null
+    await refreshNuxtData('attached-accounts')
   }
 
   return { signedIn, pending, refresh, requestCode, verifyCode, signOut }
