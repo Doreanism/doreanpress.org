@@ -102,36 +102,21 @@ useSeoMeta({
 
     <UPageSection
       :ui="{ container: 'border-t border-default', title: 'font-display' }"
-      title="The gospel is not for sale."
-      description="Dorean Press is a publishing ministry recovering an old conviction — “freely you have received; freely give.” We print thoughtful books on the church and the commercialization of Christianity."
+      title="Freely you have received; freely give"
+      description="Dorean Press is a publishing house dedicated to thoughtful books that push back on the commercialization of Christianity. In obedience to Christ’s command in Matthew 10:8, we make every resource freely available and refuse to profit from its distribution."
       :features="[{
         icon: 'i-lucide-gift',
-        title: 'Freely given',
-        description: 'We never put a paywall between a reader and the message of the gospel. Where we can, the digital edition is free to download.'
+        title: 'Free resources',
+        description: 'Every book and resource we publish is free to read online and download. There are no paywalls and no exceptions.'
       }, {
         icon: 'i-lucide-printer',
-        title: 'Printed on demand',
-        description: 'Books are printed and shipped only when ordered, through Lulu’s global print network. No warehouses, no waste, no overstock.'
+        title: 'Third-party printers',
+        description: 'We leave the secular work of printing and binding to third-party printers. Print prices are set to their minimum, so Dorean Press receives no royalties.'
+      }, {
+        icon: 'i-lucide-hand-heart',
+        title: 'Generosity',
+        description: 'Readers may request a free printed book, and others may give by covering copies requested by those who cannot pay.'
       }]"
     />
-
-    <UPageSection
-      id="about"
-      :ui="{ title: 'font-display' }"
-      title="Freely you have received; freely give."
-      description="Dorean Press exists to publish good books on the church without selling the gospel they proclaim."
-    >
-      <div class="mx-auto max-w-3xl space-y-6 text-lg/8 text-toned">
-        <p>
-          Dorean Press is a small publishing ministry with a single conviction: the message of the gospel is a gift, and gifts are not sold. Our name comes from the Greek word <em class="font-display">dorean</em> — “freely, without payment” — the very word Christ uses when he sends out his disciples: <span class="font-display italic">“Freely you have received; freely give.”</span>
-        </p>
-        <p>
-          That charge sits uneasily alongside a great deal of modern Christian publishing, where the teaching of the church is routinely placed behind a paywall and proclamation is repackaged as product. We believe there is a better, older way — one that distinguishes the <em>support</em> of gospel work from the <em>sale</em> of it.
-        </p>
-        <p>
-          So we publish carefully chosen books on the church and the commercialization of Christianity, and we order them printed on demand through Lulu. Where we are able, the digital edition is free. Nothing about how we distribute a book should contradict what the book is for.
-        </p>
-      </div>
-    </UPageSection>
   </div>
 </template>
