@@ -1,32 +1,70 @@
 <script setup lang="ts">
 useSeoMeta({
-  title: 'Books on a freely given gospel',
-  description: 'Dorean Press publishes books on the church and the commercialization of Christianity — printed on demand and sold at honest cost.'
+  title: 'The Doctrine of Simony is now available',
+  description: 'The Doctrine of Simony by Conley Owens is now available in paperback and free digital editions from Dorean Press.'
 })
 </script>
 
 <template>
   <div>
-    <UPageHero
-      :ui="{ title: 'font-display' }"
-      title="The gospel is not for sale."
-      description="Dorean Press is a publishing ministry recovering an old conviction — “freely you have received; freely give.” We print thoughtful books on the church and the commercialization of Christianity."
-      :links="[{
-        label: 'Browse the catalog',
-        to: '/catalog',
-        size: 'xl'
-      }, {
-        label: 'Our conviction',
-        to: '/#about',
-        icon: 'i-lucide-heart-handshake',
-        size: 'xl',
-        color: 'neutral',
-        variant: 'subtle'
-      }]"
-    />
+    <section class="flex min-h-[calc(100svh-4rem)] items-center py-12 sm:py-16">
+      <UContainer class="w-full">
+        <div class="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)] lg:gap-20">
+          <div class="max-w-3xl">
+            <p class="mb-5 text-sm font-semibold tracking-[0.2em] text-primary uppercase">
+              New from Dorean Press
+            </p>
+            <h1 class="font-display text-5xl leading-[0.95] font-semibold tracking-tight text-highlighted sm:text-7xl lg:text-8xl">
+              The Doctrine of Simony
+            </h1>
+            <p class="mt-5 font-display text-2xl text-muted italic sm:text-3xl">
+              A Theological Retrieval and Appraisal
+            </p>
+            <p class="mt-6 max-w-2xl text-lg/8 text-toned sm:text-xl/9">
+              Conley Owens recovers the church’s historic teaching on buying and selling spiritual things, then brings it to bear on the practices of the church today.
+            </p>
+            <p class="mt-4 text-base font-medium text-highlighted">
+              Now available in paperback and free digital editions.
+            </p>
+
+            <div class="mt-8 flex flex-wrap gap-3">
+              <UButton
+                to="/catalog/the-doctrine-of-simony"
+                label="Order the paperback"
+                icon="i-lucide-book-open"
+                size="xl"
+              />
+              <UButton
+                to="https://simony.info"
+                target="_blank"
+                label="Read online"
+                icon="i-lucide-external-link"
+                size="xl"
+                color="neutral"
+                variant="subtle"
+              />
+            </div>
+          </div>
+
+          <NuxtLink
+            to="/catalog/the-doctrine-of-simony"
+            class="group mx-auto block w-full max-w-sm lg:justify-self-end"
+            aria-label="View The Doctrine of Simony"
+          >
+            <img
+              src="/covers/the-doctrine-of-simony.webp"
+              alt="Cover of The Doctrine of Simony"
+              class="mx-auto max-h-[68svh] w-auto rounded-md shadow-2xl ring ring-default transition duration-300 group-hover:-translate-y-1 group-hover:shadow-primary/15"
+            >
+          </NuxtLink>
+        </div>
+      </UContainer>
+    </section>
 
     <UPageSection
-      :ui="{ container: 'border-t border-default' }"
+      :ui="{ container: 'border-t border-default', title: 'font-display' }"
+      title="The gospel is not for sale."
+      description="Dorean Press is a publishing ministry recovering an old conviction — “freely you have received; freely give.” We print thoughtful books on the church and the commercialization of Christianity."
       :features="[{
         icon: 'i-lucide-gift',
         title: 'Freely given',
