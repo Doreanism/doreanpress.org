@@ -12,21 +12,19 @@ const props = withDefaults(defineProps<{
 })
 
 const artwork = computed(() => props.markOnly ? doreanLogo : doreanPress)
-const proportions = computed(() => props.markOnly ? '113.47788 / 153.92664' : '833.401 / 260')
 </script>
 
 <template>
-  <span
-    :class="size"
-    class="inline-block shrink-0 bg-current text-highlighted"
-    role="img"
+  <NuxtLink
+    to="/"
+    class="inline-flex shrink-0"
     aria-label="Dorean Press"
-    :style="{
-      aspectRatio: proportions,
-      maskImage: `url(${artwork})`,
-      maskPosition: 'center',
-      maskRepeat: 'no-repeat',
-      maskSize: 'contain'
-    }"
-  />
+  >
+    <img
+      :src="artwork"
+      :class="size"
+      alt="Dorean Press"
+      class="shrink-0 dark:invert"
+    >
+  </NuxtLink>
 </template>

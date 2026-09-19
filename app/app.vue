@@ -31,7 +31,6 @@ if (isDev && !import.meta.prerender) {
 }
 
 const nav = [
-  { label: 'Home', to: '/', icon: 'i-lucide-home' },
   { label: 'Catalog', to: '/catalog', icon: 'i-lucide-library' },
   { label: 'Give a Book', to: '/give', icon: 'i-lucide-gift' }
 ]
