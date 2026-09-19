@@ -151,7 +151,7 @@ useSeoMeta({
 
       <footer class="border-t border-default">
         <UContainer class="flex flex-col items-start gap-6 py-8 sm:flex-row sm:items-end sm:justify-between">
-          <AppLogo size="h-9 w-auto" />
+          <AppLogo size="h-9 w-auto sm:h-[52px]" />
 
           <div class="flex self-stretch flex-col items-end gap-3 sm:self-auto">
             <p class="text-sm text-muted">
