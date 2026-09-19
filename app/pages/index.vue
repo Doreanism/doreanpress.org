@@ -111,7 +111,7 @@ useSeoMeta({
       }, {
         icon: 'i-lucide-printer',
         title: 'Separation of Concerns',
-        description: 'We leave the secular business of charging for physical volumes to third-party printers. Where we have accounts with distributors, we set prices to a minimum so that they profit from their work and we receive no royalties.'
+        description: 'We leave the secular business of charging for physical volumes to third parties. Where we have accounts with distributors, we set prices to a minimum so that they profit from their work and we receive no royalties.'
       }, {
         icon: 'i-lucide-hand-heart',
         title: 'Community Generosity',
