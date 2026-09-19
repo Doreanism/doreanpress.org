@@ -151,30 +151,31 @@ useSeoMeta({
 
       <footer class="border-t border-default">
         <UContainer class="flex flex-col items-start gap-6 py-8 sm:flex-row sm:items-end sm:justify-between">
-          <div class="flex max-w-md flex-col items-start gap-2">
-            <AppLogo size="h-9 w-auto" />
+          <AppLogo size="h-9 w-auto" />
+
+          <div class="flex self-stretch flex-col items-end gap-3 sm:self-auto">
             <p class="text-sm text-muted">
               “Freely you have received; freely give.” — Matthew 10:8
             </p>
-          </div>
 
-          <nav
-            aria-label="Legal"
-            class="flex shrink-0 items-center gap-5"
-          >
-            <ULink
-              to="/terms"
-              class="text-sm text-muted hover:text-default"
+            <nav
+              aria-label="Legal"
+              class="flex shrink-0 items-center justify-end gap-5"
             >
-              Terms
-            </ULink>
-            <ULink
-              to="/privacy"
-              class="text-sm text-muted hover:text-default"
-            >
-              Privacy
-            </ULink>
-          </nav>
+              <ULink
+                to="/terms"
+                class="text-sm text-muted hover:text-default"
+              >
+                Terms
+              </ULink>
+              <ULink
+                to="/privacy"
+                class="text-sm text-muted hover:text-default"
+              >
+                Privacy
+              </ULink>
+            </nav>
+          </div>
         </UContainer>
       </footer>
     </template>
