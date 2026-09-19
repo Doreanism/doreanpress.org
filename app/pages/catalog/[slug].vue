@@ -95,17 +95,51 @@ const details = computed(() => {
             />
           </div>
 
-          <UButton
-            v-if="book.freePdfUrl"
-            :to="book.freePdfUrl"
-            target="_blank"
-            label="Read the free digital edition"
-            icon="i-lucide-book-open"
-            color="neutral"
-            variant="subtle"
-            block
-            class="mt-3"
-          />
+          <div
+            v-if="book.webUrl || book.pdfUrl || book.epubUrl || book.amazonUrl"
+            class="mt-3 grid gap-3 sm:grid-cols-2"
+          >
+            <UButton
+              v-if="book.webUrl"
+              :to="book.webUrl"
+              target="_blank"
+              label="Read online"
+              icon="i-lucide-book-open"
+              color="neutral"
+              variant="subtle"
+              block
+            />
+            <UButton
+              v-if="book.pdfUrl"
+              :to="book.pdfUrl"
+              target="_blank"
+              label="Download PDF"
+              icon="i-lucide-download"
+              color="neutral"
+              variant="subtle"
+              block
+            />
+            <UButton
+              v-if="book.epubUrl"
+              :to="book.epubUrl"
+              target="_blank"
+              label="Download EPUB"
+              icon="i-lucide-tablet-smartphone"
+              color="neutral"
+              variant="subtle"
+              block
+            />
+            <UButton
+              v-if="book.amazonUrl"
+              :to="book.amazonUrl"
+              target="_blank"
+              label="Amazon"
+              icon="i-simple-icons-amazon"
+              color="neutral"
+              variant="subtle"
+              block
+            />
+          </div>
 
           <p class="mt-4 text-xs text-muted">
             Orders are printed on demand through Lulu and shipped directly to you. Please allow time for printing and delivery.

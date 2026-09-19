@@ -48,8 +48,14 @@ export interface Book {
   tagline: string
   /** Long description, one entry per paragraph. */
   description: string[]
-  /** Optional free digital edition — the dorean principle in practice. */
-  freePdfUrl?: string
+  /** Optional browser-readable edition. */
+  webUrl?: string
+  /** Optional downloadable PDF edition. */
+  pdfUrl?: string
+  /** Optional downloadable EPUB edition. */
+  epubUrl?: string
+  /** Optional retailer listing for print and Kindle editions. */
+  amazonUrl?: string
   featured?: boolean
   lulu: LuluSpec
 }
@@ -94,7 +100,10 @@ export const catalog: Book[] = [
       'The Doctrine of Simony brings that scattered inheritance into a single account, expounding simony’s definition clause by clause and recovering the tradition’s answers to the standard questions that accompanied it. What does Scripture say of the sin? How severely should it be regarded? How may a minister receive support without committing it?',
       'The book then addresses the practices of our own day that run afoul of that doctrine. The Protestant Reformation itself began in a dispute over the sale of spiritual things. What new reformation awaits a church that learns again to discern the sin of simony?'
     ],
-    freePdfUrl: 'https://simony.info/the-doctrine-of-simony.pdf',
+    webUrl: 'https://simony.info',
+    pdfUrl: 'https://simony.info/the-doctrine-of-simony.pdf',
+    epubUrl: 'https://simony.info/the-doctrine-of-simony.epub',
+    amazonUrl: 'https://www.amazon.com/dp/B0HKC6P7N6',
     featured: true,
     lulu: {
       podPackageId: '0550X0850BWSTDPB060UW444GXX',

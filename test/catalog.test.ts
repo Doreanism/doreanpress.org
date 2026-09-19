@@ -28,6 +28,10 @@ describe('catalog', () => {
       title: 'The Doctrine of Simony',
       author: 'Conley Owens',
       isbn: '979-8-1749-3028-5',
+      webUrl: 'https://simony.info',
+      pdfUrl: 'https://simony.info/the-doctrine-of-simony.pdf',
+      epubUrl: 'https://simony.info/the-doctrine-of-simony.epub',
+      amazonUrl: 'https://www.amazon.com/dp/B0HKC6P7N6',
       lulu: { pageCount: 332 }
     })
   })
