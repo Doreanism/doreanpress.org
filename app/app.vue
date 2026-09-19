@@ -16,7 +16,7 @@ if (isDev) {
 //
 // Only `refresh` is wanted here: the menu reads the state itself, and this is
 // just the one place that resolves it before a page renders.
-// Not during prerender. `/` and `/about` are built once and served to everyone
+// Not during prerender. `/` is built once and served to everyone
 // (see `routeRules`), so there is no reader to ask about at build time — asking
 // anyway threw, and `nuxt build` failed on both pages. Even had it answered,
 // baking one reader's header into shared static HTML is not a thing to want.
@@ -33,8 +33,7 @@ if (isDev && !import.meta.prerender) {
 const nav = [
   { label: 'Home', to: '/', icon: 'i-lucide-home' },
   { label: 'Catalog', to: '/catalog', icon: 'i-lucide-library' },
-  { label: 'Give a Book', to: '/give', icon: 'i-lucide-gift' },
-  { label: 'About', to: '/about', icon: 'i-lucide-heart-handshake' }
+  { label: 'Give a Book', to: '/give', icon: 'i-lucide-gift' }
 ]
 
 const title = isDev ? 'Dorean Press' : 'Coming Soon'

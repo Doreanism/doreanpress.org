@@ -426,7 +426,7 @@ const providerOptions = computed(() => {
       No way to verify an account is configured on this site yet, so requests can't be
       posted. Please
       <ULink
-        to="/about"
+        to="/#about"
         class="text-primary"
       >get in touch</ULink> and we'll sort it out.
     </p>
