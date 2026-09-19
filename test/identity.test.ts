@@ -203,13 +203,13 @@ describe('provider metadata', () => {
 
   it('only claims a public profile link for providers that actually give one', () => {
     // Facebook's user_link and LinkedIn's vanity name are both behind partner
-    // review, and TikTok's handle behind the user.info.profile scope; claiming
-    // otherwise would render a badge that links nowhere.
+    // review; claiming otherwise would render a badge that links nowhere.
+    // TikTok's handle comes from user.info.profile, which the route requests.
     expect(IDENTITY_PROVIDERS.x.linkable).toBe(true)
     expect(IDENTITY_PROVIDERS.twitch.linkable).toBe(true)
+    expect(IDENTITY_PROVIDERS.tiktok.linkable).toBe(true)
     expect(IDENTITY_PROVIDERS.facebook.linkable).toBe(false)
     expect(IDENTITY_PROVIDERS.linkedin.linkable).toBe(false)
-    expect(IDENTITY_PROVIDERS.tiktok.linkable).toBe(false)
   })
 
   // The three that hand back a public URL owe a sponsor something to open —

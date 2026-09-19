@@ -1,16 +1,10 @@
 // Prove you hold a TikTok account. Callback URL to register: <site>/verify/tiktok
 //
-// TikTok gives a display name and photo but, by default, nothing to click: the
-// handle and the profile link live behind the `user.info.profile` scope, which
-// needs approval in the developer portal. Only `user.info.basic` is requested
-// here, because an unapproved scope fails the authorisation outright — a
-// provider that works and shows an unlinked account is worth more than one that
-// dead-ends for every reader until a review comes back.
-//
-// The mapping below already reads the handle and link, so adding
-// `'user.info.profile'` to the scope once it is granted is the whole change:
-// accounts verified after that point start linking, and `linkable` in
-// IDENTITY_PROVIDERS can be flipped to match.
+// `user.info.basic` gives a display name and photo; the handle and the profile
+// link live behind `user.info.profile`. Both are requested. Every scope asked
+// for here must be enabled for the key in use — an app review for production,
+// the Sandbox's scope list for a sandbox key — or TikTok fails the whole
+// authorisation rather than returning less.
 
 interface TikTokUser {
   open_id?: string
@@ -24,7 +18,15 @@ interface TikTokUser {
 }
 
 const handler = defineOAuthTikTokEventHandler({
-  config: { scope: ['user.info.basic'] },
+  config: {
+    scope: ['user.info.basic', 'user.info.profile'],
+    // Always show TikTok's consent page, even to a reader who has authorised us
+    // before. Without it TikTok bounces a signed-in browser straight back, which
+    // attaches whichever account happens to be signed in — the consent page is
+    // where the reader sees which one it is and can switch. The library has no
+    // option for extra authorize params; `withQuery` merges this one in.
+    authorizationURL: 'https://www.tiktok.com/v2/auth/authorize/?disable_auto_auth=1'
+  },
 
   async onSuccess(event, { user }: { user?: TikTokUser }) {
     const name = user?.display_name || user?.username
@@ -38,9 +40,13 @@ const handler = defineOAuthTikTokEventHandler({
       subject: String(user.open_id),
       name,
       handle: user.username,
+      // The handle form, not `profile_deep_link`. TikTok's deep link is a
+      // vm.tiktok.com shortener that says nothing about whose profile it is and
+      // asks to open the app; a sponsor reading the board is being shown which
+      // account they are paying for, so the link should say so on its face.
       profileUrl: user.username
-        ? user.profile_deep_link || `https://www.tiktok.com/@${encodeURIComponent(user.username)}`
-        : undefined,
+        ? `https://www.tiktok.com/@${encodeURIComponent(user.username)}`
+        : user.profile_deep_link,
       avatarUrl: user.avatar_large_url || user.avatar_url,
       providerVerified: Boolean(user.is_verified)
     })

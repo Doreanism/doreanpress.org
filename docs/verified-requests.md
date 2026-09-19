@@ -186,7 +186,7 @@ else.
 | Facebook | ✓ | ✓ | — | — | — |
 | LinkedIn | ✓ | ✓ | — | — | — |
 | Twitch | ✓ | ✓ | ✓ `twitch.tv/<login>` | ✓ | — |
-| TikTok | ✓ | ✓ | — (see below) | — | ✓ their own |
+| TikTok | ✓ | ✓ | ✓ `tiktok.com/@<username>` | — | ✓ their own |
 | GitHub | ✓ | ✓ | ✓ `github.com/<login>` | ✓ | — |
 | GitLab | ✓ | ✓ | ✓ `gitlab.com/<username>` | ✓ | — |
 | Bluesky | ✓ | ✓ | ✓ `bsky.app/profile/<handle>` | ✓ | — |
@@ -197,11 +197,10 @@ partner review, and Facebook's plain numeric id is app-scoped, so it resolves to
 nothing for anybody else. Requests from those two show a verified name and face
 with nothing to click.
 
-TikTok is a third of that kind, but only until an app review comes back: the
-handle and profile link live behind the `user.info.profile` scope, and the route
-asks for `user.info.basic` alone because an unapproved scope fails the whole
-authorisation. The mapping already reads the handle where it is granted, so
-adding the scope and flipping `linkable` is the entire change once approved.
+TikTok's handle and profile link come from the `user.info.profile` scope, which
+the route requests alongside `user.info.basic`. TikTok fails the whole
+authorisation for a scope the key has not been granted, so a production key only
+works once an app review has approved both.
 
 Most providers also give the date the account was opened, and that is carried
 (`accountCreatedAt`) and shown. It is worth less than it was — every account on
@@ -336,8 +335,9 @@ Register the callback URL as `<site>/verify/<provider>` — e.g.
 - **TikTok** — [developers.tiktok.com](https://developers.tiktok.com): add *Login
   Kit*. Its credentials are `NUXT_OAUTH_TIKTOK_CLIENT_KEY` and `..._CLIENT_SECRET`
   — a *key*, not an id, which is TikTok's own name for it and what
-  `configuredProviders` looks for. `user.info.profile` needs app review; until it
-  is granted, leave the route's scope alone and TikTok accounts show unlinked.
+  `configuredProviders` looks for. Add `user.info.profile` to the app's scopes
+  (in a Sandbox, directly; in production, through app review) — the route
+  requests it, and TikTok refuses the sign-in for a key that lacks it.
 
 Then fill in the `NUXT_OAUTH_*` pairs and `NUXT_SESSION_PASSWORD` (see
 `.env.example`). Rotating the session password invalidates proofs in flight,

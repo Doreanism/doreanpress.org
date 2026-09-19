@@ -216,12 +216,10 @@ export interface ProviderMeta {
   /**
    * Whether the provider hands us a public profile URL *as configured here*.
    *
-   * X, Twitch and every lookup provider do. Facebook's `user_link` and
-   * LinkedIn's vanity name both sit behind partner review, and TikTok's handle
-   * needs the `user.info.profile` scope approved, so those three show as a
-   * verified name and photo with nothing to click. The TikTok route already
-   * reads the handle where it is granted — this stays false until approval is
-   * the ordinary case rather than the exception.
+   * X, Twitch, TikTok (via `user.info.profile`) and every lookup provider do.
+   * Facebook's `user_link` and LinkedIn's vanity name both sit behind partner
+   * review, so those two show as a verified name and photo with nothing to
+   * click.
    */
   linkable: boolean
   /**
@@ -261,7 +259,7 @@ export const IDENTITY_PROVIDERS: Record<IdentityProvider, ProviderMeta> = {
   tiktok: {
     label: 'TikTok',
     icon: 'i-simple-icons-tiktok',
-    linkable: false
+    linkable: true
   },
   github: {
     label: 'GitHub',
