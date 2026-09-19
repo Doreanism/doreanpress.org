@@ -64,12 +64,20 @@ const route = useRoute()
 // shut, nothing moving — until this request landed. On the server it still
 // resolves before the HTML is written (`onServerPrefetch` awaits it either
 // way), so a page loaded directly is complete on arrival, as it was.
+//
+// No `default`. During hydration Nuxt takes any defined `data` as the server's
+// payload and skips the fetch, marking it a success — and this component does
+// mount mid-hydration: the request modal opens itself on `/cart?request=1`, the
+// page every provider hands the reader back to, once the cart is read from
+// storage. A default there was reported as the answer — an empty list — and the
+// reader was told no provider exists, with nothing to attach a second one by.
 const { data: providers, status } = useFetch<{ challenge: ChallengeOption[] }>(
   '/api/verify/providers',
-  { lazy: true, default: () => ({ challenge: [] }) }
+  { lazy: true }
 )
+const challengeOptions = computed(() => providers.value?.challenge ?? [])
 
-const anyProvider = computed(() => providers.value.challenge.length > 0)
+const anyProvider = computed(() => challengeOptions.value.length > 0)
 
 /**
  * The services already spoken for, so the row can say so.
@@ -233,7 +241,7 @@ const providerOptions = computed(() => {
     const i = POPULARITY.indexOf(id)
     return i === -1 ? POPULARITY.length : i
   }
-  return [...providers.value.challenge].sort((a, b) => rank(a.id) - rank(b.id))
+  return [...challengeOptions.value].sort((a, b) => rank(a.id) - rank(b.id))
 })
 </script>
 
