@@ -69,12 +69,12 @@ const principles = [
     <UPageCTA
       :ui="{ title: 'font-display' }"
       class="mt-8"
-      title="Begin with the book we are named for"
-      description="The Dorean Principle lays out, from Scripture, the case for a freely given ministry."
+      title="Recover an old doctrine"
+      description="The Doctrine of Simony retrieves the church’s historic teaching on buying and selling spiritual things, then applies it to the practices of our own day."
       variant="subtle"
       :links="[{
-        label: 'Read The Dorean Principle',
-        to: '/catalog/the-dorean-principle'
+        label: 'View The Doctrine of Simony',
+        to: '/catalog/the-doctrine-of-simony'
       }, {
         label: 'Browse the catalog',
         to: '/catalog',

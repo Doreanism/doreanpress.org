@@ -3,7 +3,7 @@ import { catalog } from '#shared/catalog'
 
 useSeoMeta({
   title: 'Catalog',
-  description: 'Browse every title from Dorean Press — books on the church and the commercialization of Christianity, printed on demand and sold at cost.'
+  description: 'The Doctrine of Simony by Conley Owens, printed on demand and sold at cost by Dorean Press.'
 })
 </script>
 
@@ -12,10 +12,10 @@ useSeoMeta({
     <UPageHeader
       :ui="{ title: 'font-display' }"
       title="The Catalog"
-      description="Every title is printed on demand and priced just above the cost of printing. Browse, and order a copy for yourself or to give away."
+      description="Our first title is printed on demand and priced just above the cost of printing. Order a copy for yourself or to give away."
     />
 
-    <div class="mt-10 grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4">
+    <div class="mt-10 max-w-sm">
       <BookCard
         v-for="book in catalog"
         :key="book.slug"

@@ -12,7 +12,9 @@ import { destinationKey, foldOrders, orderKey, type BookRequest } from '../serve
 // and `foldOrders` is what that second ask does to the order already waiting.
 
 const A = catalog[0]!.slug
-const B = catalog[1]!.slug
+// `foldOrders` is deliberately catalog-agnostic; keep a second distinct slug
+// here even while the storefront offers only one title.
+const B = 'another-title'
 
 function account(subject: string): RequesterIdentity {
   return { provider: 'x', subject, name: `Reader ${subject}`, verifiedAt: '2026-01-01T00:00:00.000Z' }

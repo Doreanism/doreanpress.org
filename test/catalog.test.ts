@@ -13,12 +13,25 @@ import {
   summarizeTitles
 } from '../shared/catalog'
 
-// Two real slugs, so the tests exercise the same catalog lookups production
-// does. Prices are never asserted directly — they change, and a test that
-// hard-codes them is a test that breaks for the wrong reason.
+// The real slug exercises catalog lookups. A second distinct slug lets the
+// request-list helpers prove that they preserve separate lines even while the
+// storefront offers only one title.
 const A = catalog[0]!.slug
-const B = catalog[1]!.slug
+const B = 'another-title'
 const UNKNOWN = 'no-such-book'
+
+describe('catalog', () => {
+  it('offers only the print edition of The Doctrine of Simony', () => {
+    expect(catalog).toHaveLength(1)
+    expect(catalog[0]).toMatchObject({
+      slug: 'the-doctrine-of-simony',
+      title: 'The Doctrine of Simony',
+      author: 'Conley Owens',
+      isbn: '979-8-1749-3028-5',
+      lulu: { pageCount: 332 }
+    })
+  })
+})
 
 describe('itemsCopies', () => {
   it('adds up copies across titles', () => {

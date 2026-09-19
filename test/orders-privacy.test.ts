@@ -9,7 +9,7 @@ import type { BookRequest } from '../server/utils/requests'
 
 const REQUEST: BookRequest = {
   id: 'req-1',
-  items: [{ slug: 'the-dorean-principle', quantity: 2 }],
+  items: [{ slug: 'the-doctrine-of-simony', quantity: 2 }],
   message: 'Thank you.',
   requesters: [{
     provider: 'bluesky',
@@ -54,7 +54,7 @@ describe('what a giver is shown', () => {
 
   it('still shows what they came for', () => {
     const view = toGivenView(REQUEST)
-    expect(view.titles).toEqual(['The Dorean Principle'])
+    expect(view.titles).toEqual(['The Doctrine of Simony'])
     expect(view.status).toBe('fulfilled')
     // The public badge, which the board already shows them.
     expect(view.requesters[0]?.handle).toBe('reader.bsky.social')
@@ -73,7 +73,7 @@ describe('what the person waiting is shown', () => {
     // Not a leak, but not wanted: the page is about where the books are.
     const serialized = JSON.stringify(toMineView(REQUEST))
     expect(serialized).not.toContain('17 Private Street')
-    expect(JSON.parse(serialized).titles).toEqual(['The Dorean Principle'])
+    expect(JSON.parse(serialized).titles).toEqual(['The Doctrine of Simony'])
   })
 })
 
