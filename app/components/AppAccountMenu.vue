@@ -14,7 +14,7 @@
 // where it did not before — the list is the same list for everybody, and only
 // the last row changes word between Sign in and Sign out.
 //
-// Your orders and Attach accounts are always offered, signed in or not. Hiding
+// Your orders and Attached accounts are always offered, signed in or not. Hiding
 // them until you sign in would mean the way to find out what this site keeps for
 // you is only visible once you already know: both destinations ask for what they
 // need when they get there, which is a better answer than a menu that looks
@@ -100,7 +100,7 @@ async function onSignOut() {
         <UButton
           to="/profiles"
           icon="i-lucide-at-sign"
-          label="Attach accounts"
+          label="Attached accounts"
           color="neutral"
           variant="ghost"
           block
