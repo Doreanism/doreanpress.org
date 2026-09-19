@@ -107,7 +107,7 @@ useSeoMeta({
       :features="[{
         icon: 'i-lucide-gift',
         title: 'Free resources',
-        description: 'Every book and resource we publish is free to read online and download. There are no paywalls and no exceptions.'
+        description: 'Every work we publish is dedicated to the public domain and free to read online and download. There are no paywalls and no exceptions.'
       }, {
         icon: 'i-lucide-printer',
         title: 'Third-party printers',
