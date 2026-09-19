@@ -21,7 +21,7 @@ useSeoMeta({
               A Theological Retrieval and Appraisal
             </p>
             <p class="mt-6 max-w-2xl text-lg/8 text-toned sm:text-xl/9">
-              Conley Owens recovers the church’s historic teaching on buying and selling spiritual things, then brings it to bear on the practices of the church today.
+              The book recovers the church’s historic teaching on buying and selling spiritual things, then brings it to bear on the practices of the church today.
             </p>
             <p class="mt-4 text-base font-medium text-highlighted">
               Now available in paperback and free digital editions.
