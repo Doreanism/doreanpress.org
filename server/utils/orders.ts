@@ -55,7 +55,10 @@ function ensureSchema() {
       // which was ever a lookup key before.
       await sql`CREATE INDEX IF NOT EXISTS book_requests_email_idx ON book_requests (email)`
       await sql`CREATE INDEX IF NOT EXISTS book_requests_sponsor_email_idx ON book_requests (sponsor_email)`
-    })().then(() => undefined)
+    })().then(() => undefined).catch((err) => {
+      schema = null
+      throw err
+    })
   }
   return schema
 }

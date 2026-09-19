@@ -20,7 +20,10 @@ function ensureSchema() {
         id           text PRIMARY KEY,
         processed_at text NOT NULL
       )
-    `.then(() => undefined)
+    `.then(() => undefined).catch((err) => {
+        schema = null
+        throw err
+      })
   }
   return schema
 }
