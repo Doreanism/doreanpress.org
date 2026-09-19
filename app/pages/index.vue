@@ -133,18 +133,5 @@ useSeoMeta({
         </p>
       </div>
     </UPageSection>
-
-    <UPageSection>
-      <UPageCTA
-        :ui="{ title: 'font-display' }"
-        title="Read freely. Give freely."
-        description="Read The Doctrine of Simony online for free, or order a paperback at cost."
-        variant="subtle"
-        :links="[{
-          label: 'View the book',
-          to: '/catalog/the-doctrine-of-simony'
-        }]"
-      />
-    </UPageSection>
   </div>
 </template>
