@@ -105,7 +105,7 @@ useSeoMeta({
       title="Freely you have received; freely give"
       description="Dorean Press is a publishing house dedicated to thoughtful books that push back on the commercialization of Christianity. In obedience to Christ’s command in Matthew 10:8, we make every resource freely available and refuse to profit from its distribution."
       :features="[{
-        icon: 'i-lucide-gift',
+        icon: 'i-lucide-bird',
         title: 'Free resources',
         description: 'Every work we publish is dedicated to the public domain and free to read online and download. There are no paywalls and no exceptions.'
       }, {
