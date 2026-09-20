@@ -1,12 +1,9 @@
 <script setup lang="ts">
-const isDev = import.meta.dev
 const { count } = useCart()
 
 // An identity challenge happens by leaving the site and coming back, so a
 // failure surfaces as a flag on the return URL rather than a rejected fetch.
-if (isDev) {
-  useChallengeFeedback()
-}
+useChallengeFeedback()
 
 // The account sits with the cart in the top right, not in the nav. Both are
 // about *you* rather than about the press — what you are buying, what you have
@@ -25,7 +22,7 @@ if (isDev) {
 // depends on it — /orders — renders right the first time. On the prerendered
 // ones the same call runs on the client instead, because there is no payload
 // waiting for it there.
-if (isDev && !import.meta.prerender) {
+if (!import.meta.prerender) {
   const { refresh } = useSignedIn()
   await useAsyncData('signed-in', () => refresh())
 }
@@ -35,10 +32,8 @@ const nav = [
   { label: 'Give a Book', to: '/give', icon: 'i-lucide-gift' }
 ]
 
-const title = isDev ? 'Dorean Press' : 'Coming Soon'
-const description = isDev
-  ? 'A publishing ministry recovering the conviction that the gospel is freely given. Books on the church and the commercialization of Christianity, printed on demand.'
-  : 'Dorean Press is coming soon.'
+const title = 'Dorean Press'
+const description = 'A publishing ministry recovering the conviction that the gospel is freely given. Books on the church and the commercialization of Christianity, printed on demand.'
 
 useHead({
   titleTemplate: t => (t ? `${t} · Dorean Press` : 'Dorean Press'),
@@ -63,33 +58,17 @@ useSeoMeta({
 
 <template>
   <UApp :toaster="{ progress: false, position: 'bottom-right' }">
-    <main
-      v-if="!isDev"
-      class="flex min-h-screen items-center justify-center bg-default px-6"
-    >
-      <div class="text-center">
-        <AppLogo size="mx-auto h-24 w-auto sm:h-32" />
-        <h1 class="mt-12 font-display text-6xl font-semibold tracking-tight text-highlighted sm:text-8xl">
-          Coming Soon
-        </h1>
-        <p class="mt-6 font-display text-lg italic text-muted sm:text-xl">
-          “Freely you have received; freely give.”
-        </p>
-      </div>
-    </main>
+    <FreelyGiven />
 
-    <template v-else>
-      <FreelyGiven />
+    <UHeader>
+      <template #left>
+        <AppLogo size="h-8 w-auto" />
+      </template>
 
-      <UHeader>
-        <template #left>
-          <AppLogo size="h-8 w-auto" />
-        </template>
+      <UNavigationMenu :items="nav" />
 
-        <UNavigationMenu :items="nav" />
-
-        <template #right>
-          <!--
+      <template #right>
+        <!--
           Two buttons: this one is you and how you see the site, the cart is
           what you are buying. The gear that stood here folded into the person
           beside it — one place to look rather than a choice about which of two
@@ -106,78 +85,83 @@ useSeoMeta({
           arrived disabled either way, and it sits behind a click that cannot
           happen before hydration.
         -->
-          <ClientOnly>
-            <AppAccountMenu />
+        <ClientOnly>
+          <AppAccountMenu />
 
-            <template #fallback>
-              <UButton
-                icon="i-lucide-circle-user-round"
-                color="neutral"
-                variant="ghost"
-                disabled
-                aria-hidden="true"
-              />
-            </template>
-          </ClientOnly>
-
-          <UChip
-            :text="count"
-            :show="count > 0"
-            size="2xl"
-            color="primary"
-          >
+          <template #fallback>
             <UButton
-              to="/cart"
-              icon="i-lucide-shopping-cart"
+              icon="i-lucide-circle-user-round"
               color="neutral"
               variant="ghost"
-              aria-label="Cart"
+              disabled
+              aria-hidden="true"
             />
-          </UChip>
-        </template>
+          </template>
+        </ClientOnly>
 
-        <template #body>
-          <UNavigationMenu
-            :items="nav"
-            orientation="vertical"
-            class="-mx-2.5"
+        <UChip
+          :text="count"
+          :show="count > 0"
+          size="2xl"
+          color="primary"
+        >
+          <UButton
+            to="/cart"
+            icon="i-lucide-shopping-cart"
+            color="neutral"
+            variant="ghost"
+            aria-label="Cart"
           />
-        </template>
-      </UHeader>
+        </UChip>
+      </template>
 
-      <UMain>
-        <NuxtPage />
-      </UMain>
+      <template #body>
+        <UNavigationMenu
+          :items="nav"
+          orientation="vertical"
+          class="-mx-2.5"
+        />
+      </template>
+    </UHeader>
 
-      <footer class="border-t border-default">
-        <UContainer class="flex flex-col items-start gap-6 py-8 sm:flex-row sm:items-end sm:justify-between">
-          <AppLogo size="h-9 w-auto sm:h-[52px]" />
+    <UMain>
+      <NuxtPage />
+    </UMain>
 
-          <div class="flex self-stretch flex-col items-end gap-3 sm:self-auto">
-            <p class="text-sm text-muted">
-              “Freely you have received; freely give.” — Matthew 10:8
-            </p>
+    <footer class="border-t border-default">
+      <UContainer class="flex flex-col items-start gap-6 py-8 sm:flex-row sm:items-end sm:justify-between">
+        <AppLogo size="h-9 w-auto sm:h-[52px]" />
 
-            <nav
-              aria-label="Legal"
-              class="flex shrink-0 items-center justify-end gap-5"
+        <div class="flex self-stretch flex-col items-end gap-3 sm:self-auto">
+          <p class="text-sm text-muted">
+            “Freely you have received; freely give.” — Matthew 10:8
+          </p>
+
+          <nav
+            aria-label="Legal and contact"
+            class="flex shrink-0 items-center justify-end gap-5"
+          >
+            <ULink
+              to="/terms"
+              class="text-sm text-muted hover:text-default"
             >
-              <ULink
-                to="/terms"
-                class="text-sm text-muted hover:text-default"
-              >
-                Terms
-              </ULink>
-              <ULink
-                to="/privacy"
-                class="text-sm text-muted hover:text-default"
-              >
-                Privacy
-              </ULink>
-            </nav>
-          </div>
-        </UContainer>
-      </footer>
-    </template>
+              Terms
+            </ULink>
+            <ULink
+              to="/privacy"
+              class="text-sm text-muted hover:text-default"
+            >
+              Privacy
+            </ULink>
+            <ULink
+              to="mailto:info@doreanpress.org"
+              class="text-sm text-muted hover:text-default"
+            >
+              info@doreanpress.org
+            </ULink>
+          </nav>
+        </div>
+      </UContainer>
+    </footer>
   </UApp>
 </template>

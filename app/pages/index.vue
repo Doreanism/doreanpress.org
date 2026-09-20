@@ -1,4 +1,13 @@
 <script setup lang="ts">
+// Until the press announces itself, the front page says so and the rest of the
+// site works: a reader handed a link to the book, or to a request on the Give a
+// Book board, lands on the real page rather than a holding notice.
+//
+// `import.meta.dev` is what decides, so development shows the finished front
+// page — the thing being built — and only a production build holds the door.
+// Replacing the condition is the whole of launching.
+const comingSoon = !import.meta.dev
+
 const { add } = useCart()
 
 async function requestFreeCopy() {
@@ -6,14 +15,34 @@ async function requestFreeCopy() {
   await navigateTo({ path: '/cart', query: { request: '1' } })
 }
 
-useSeoMeta({
-  title: 'The Doctrine of Simony is now available',
-  description: 'The Doctrine of Simony by Conley Owens is now available in paperback and free digital editions from Dorean Press.'
-})
+useSeoMeta(comingSoon
+  ? {
+      title: 'Coming Soon',
+      description: 'Dorean Press is coming soon.'
+    }
+  : {
+      title: 'The Doctrine of Simony is now available',
+      description: 'The Doctrine of Simony by Conley Owens is now available in paperback and free digital editions from Dorean Press.'
+    })
 </script>
 
 <template>
-  <div>
+  <section
+    v-if="comingSoon"
+    class="flex min-h-[calc(100svh-8rem)] items-center justify-center bg-default px-6"
+  >
+    <div class="text-center">
+      <AppLogo size="mx-auto h-24 w-auto sm:h-32" />
+      <h1 class="mt-12 font-display text-6xl font-semibold tracking-tight text-highlighted sm:text-8xl">
+        Coming Soon
+      </h1>
+      <p class="mt-6 font-display text-lg italic text-muted sm:text-xl">
+        “Freely you have received; freely give.”
+      </p>
+    </div>
+  </section>
+
+  <div v-else>
     <section class="relative isolate flex min-h-[calc(100svh-4rem)] items-center overflow-hidden bg-default py-12 sm:py-16">
       <div
         aria-hidden="true"
