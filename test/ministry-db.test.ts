@@ -48,6 +48,7 @@ describe.skipIf(!enabled)('ministry database transactions', () => {
     vi.stubGlobal('sendEmail', vi.fn().mockResolvedValue(undefined))
     zeffy = await import('../server/utils/zeffy')
     accounts = await import('../server/utils/readerAccounts')
+    vi.stubGlobal('publicRequests', (await import('../server/utils/publicRequests')).publicRequests)
     await ministry.ensureMinistrySchema()
     await accounts.listAttachedIdentities({} as never)
     adminHandler = (await import('../server/api/admin/fulfillment/[id].post')).default as never
@@ -165,6 +166,45 @@ describe.skipIf(!enabled)('ministry database transactions', () => {
     await adminHandler(event({ action: 'tracking', trackingUrl: '' }))
     expect((await requests.getRequest(r.id))?.status).toBe('ordered')
   }, 30000)
+  it('updates existing public requests and protects the selected primary during concurrent changes', async () => {
+    await sql`INSERT INTO reader_accounts(id, created_at, updated_at) VALUES ('profiles-reader', 'now', 'now')`
+    const r = await request()
+    await sql`UPDATE book_requests SET account_id = 'profiles-reader' WHERE id = ${r.id}`
+    for (const subject of ['first', 'second']) {
+      const identity = { provider: 'github', subject, name: subject, confirmation: 'control', verifiedAt: 'now' }
+      await sql`INSERT INTO reader_identities(account_id, provider, subject, identity, provider_email, attached_at, last_verified_at)
+        VALUES ('profiles-reader', 'github', ${subject}, ${JSON.stringify(identity)}::jsonb, 'secret@example.test', ${subject}, 'now')`
+    }
+    const event = { accountId: 'profiles-reader' } as never
+    expect((await accounts.listAttachedIdentities(event)).identities.find(i => i.primary)?.subject).toBe('first')
+    await expect(accounts.detachIdentity(event, 'github:first')).rejects.toMatchObject({ statusCode: 409 })
+    await expect(accounts.setPrimaryIdentity('profiles-reader', 'github:foreign')).rejects.toMatchObject({ statusCode: 422 })
+    await accounts.setPrimaryIdentity('profiles-reader', 'github:second')
+    const list = (await import('../server/api/requests/index.get')).default
+    const publicRequest = (await list({} as never)).find(row => row.id === r.id)!
+    expect(publicRequest.requesters).toHaveLength(2)
+    expect(publicRequest.requesters.find(i => i.primary)?.subject).toBe('second')
+    expect(JSON.stringify(publicRequest)).not.toContain('secret@example.test')
+    expect((await requests.getRequest(r.id))?.requesters).toEqual([])
+    await Promise.allSettled([
+      accounts.setPrimaryIdentity('profiles-reader', 'github:first'),
+      accounts.detachIdentity(event, 'github:first')
+    ])
+    const remaining = (await accounts.listAttachedIdentities(event)).identities
+    expect(remaining.filter(i => i.primary)).toHaveLength(1)
+    await expect(accounts.detachIdentity(event, `github:${remaining.find(i => i.primary)!.subject}`)).rejects.toMatchObject({ statusCode: 409 })
+  })
+  it('does not overwrite edits or funding that happened after an edit began', async () => {
+    const r = await request()
+    const increased = [{ slug: 'the-doctrine-of-simony', quantity: 3 }]
+    expect((await requests.updateRequest(r.id, { items: increased }, r))?.items).toEqual(increased)
+    expect(await requests.updateRequest(r.id, { items: r.items }, r)).toBeNull()
+    const latest = (await requests.getRequest(r.id))!
+    await zeffy.recordZeffyGift(gift(await reserve(r.id)))
+    expect(await requests.updateRequest(r.id, { items: r.items }, latest)).toBeNull()
+    expect(await requests.updateRequest(r.id, { items: r.items })).toBeNull()
+    expect((await requests.getRequest(r.id))?.items).toEqual(increased)
+  })
   it('two simultaneous detach requests leave one identity', async () => {
     await sql`INSERT INTO reader_accounts(id, created_at, updated_at) VALUES ('reader', 'now', 'now')`
     for (const subject of ['one', 'two']) await sql`INSERT INTO reader_identities(account_id, provider, subject, identity, attached_at, last_verified_at)

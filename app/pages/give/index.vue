@@ -20,9 +20,38 @@ const handoff = ref<{ url: string, recommendation: string, question: string } | 
 // One card per order, and a reader has one open order per address: asking again
 // for the same doorstep adds the books to what is already here rather than
 // posting a second time. So a card is everything one reader is waiting for.
-const { data: requests, refresh } = await useFetch<PublicBookRequest[]>('/api/requests', {
+const { data: requests, refresh, status } = await useFetch<PublicBookRequest[]>('/api/requests', {
   default: () => []
 })
+
+const requestAnchor = (id: string) => `request-${id}`
+const linkedId = ref('')
+const linkedRequestMissing = computed(() => linkedId.value && status.value === 'success'
+  && !requests.value.some(request => request.id === linkedId.value))
+
+async function revealLinkedRequest() {
+  linkedId.value = route.hash.startsWith('#request-') ? route.hash.slice('#request-'.length) : ''
+  if (!linkedId.value) return
+  await nextTick()
+  document.getElementById(requestAnchor(linkedId.value))?.scrollIntoView({ block: 'start' })
+}
+
+onMounted(() => {
+  revealLinkedRequest()
+  watch([() => route.hash, requests], revealLinkedRequest, { flush: 'post' })
+})
+
+async function copyRequestLink(id: string) {
+  const url = new URL('/give', window.location.origin)
+  url.hash = requestAnchor(id)
+  try {
+    await navigator.clipboard.writeText(url.href)
+    toast.add({ title: 'Request link copied', icon: 'i-lucide-link', color: 'primary' })
+  } catch {
+    // The anchor still opens, so the address bar and link menu remain usable.
+    toast.add({ title: 'Copy the link from your address bar', color: 'neutral' })
+  }
+}
 
 onMounted(() => {
   if (route.query.sponsored) {
@@ -66,41 +95,10 @@ async function sponsor(id: string) {
   }
 }
 
-// Taking your own posting down is one click when the proof already in hand is
-// the account that made it. The withdraw page stays for everything else: a proof
-// that has lapsed, a different account, or the link in the confirmation email.
+// Confirm removal here when the attached profiles establish ownership.
 const { identities } = useIdentityProof()
-const removingId = ref<string | null>(null)
-
 function isMine(req: PublicBookRequest) {
   return sharesAccount(identities.value, req.requesters)
-}
-
-async function removeMine(req: PublicBookRequest) {
-  removingId.value = req.id
-  try {
-    await $fetch(`/api/requests/${req.id}`, { method: 'DELETE' })
-    await Promise.all([refresh(), refreshNuxtData('orders')])
-    toast.add({
-      title: 'Off the board',
-      description: 'Your request has been removed. You can ask again any time.',
-      icon: 'i-lucide-check',
-      color: 'primary'
-    })
-  } catch (err) {
-    const failure = err as { statusCode?: number, data?: { statusMessage?: string } }
-    // Only the withdraw page can raise a fresh challenge, so a lapsed proof is
-    // handed over to it rather than dead-ending here.
-    if (failure?.statusCode === 401) return navigateTo(`/give/withdraw?id=${req.id}`)
-    toast.add({
-      title: 'Could not remove it',
-      description: failure?.data?.statusMessage || 'Please try again.',
-      icon: 'i-lucide-triangle-alert',
-      color: 'error'
-    })
-  } finally {
-    removingId.value = null
-  }
 }
 
 function formatDate(iso: string) {
@@ -111,10 +109,17 @@ function formatDate(iso: string) {
 <template>
   <UContainer class="py-12 sm:py-16">
     <UPageHeader
-      :ui="{ title: 'font-display' }"
+      :ui="{ root: 'border-0', title: 'font-display' }"
       title="Give a Book"
-      description="Give to Lakewood Village Baptist Church’s Dorean Press ministry through Zeffy. You may recommend a request; the church retains control and discretion over every gift. If a request cannot be filled, your gift remains in the book ministry."
     />
+
+    <p
+      v-if="linkedRequestMissing"
+      role="status"
+      class="mt-6 rounded-lg bg-elevated p-4 text-sm text-muted"
+    >
+      This request is no longer available. You can browse the other open requests below.
+    </p>
 
     <div
       v-if="handoff"
@@ -156,8 +161,10 @@ function formatDate(iso: string) {
     >
       <div
         v-for="req in requests"
+        :id="requestAnchor(req.id)"
         :key="req.id"
-        class="flex flex-col gap-4 rounded-lg ring ring-default bg-default p-5"
+        class="request-card flex scroll-mt-24 flex-col gap-4 rounded-lg p-5"
+        :class="linkedId === req.id ? 'ring-2 ring-primary bg-primary/5 shadow-lg' : 'ring ring-default bg-default'"
       >
         <!-- The account leads the card: it is who the sponsor is giving to. -->
         <RequesterBadge :requesters="req.requesters" />
@@ -185,7 +192,7 @@ function formatDate(iso: string) {
 
         <div class="flex flex-col gap-2">
           <UButton
-            label="Give and recommend these books"
+            label="Gift these books"
             icon="i-lucide-gift"
             color="primary"
             block
@@ -193,30 +200,23 @@ function formatDate(iso: string) {
             :disabled="!isSponsorable(req.items) || picks[req.id]?.length === 0"
             @click="sponsor(req.id)"
           />
-          <p class="text-center text-xs text-dimmed">
-            Your recommendation helps us decide which request to fill next.
-          </p>
-          <UButton
-            v-if="isMine(req)"
-            label="This is my request — remove it"
-            icon="i-lucide-trash-2"
-            color="neutral"
-            variant="link"
-            size="xs"
-            block
-            :loading="removingId === req.id"
-            @click="removeMine(req)"
-          />
-          <UButton
-            v-else
-            :to="`/give/withdraw?id=${req.id}`"
-            label="This is my request — remove it"
-            icon="i-lucide-trash-2"
-            color="neutral"
-            variant="link"
-            size="xs"
-            block
-          />
+          <div class="flex items-center justify-end gap-1">
+            <UButton
+              :to="{ path: '/give', hash: `#${requestAnchor(req.id)}` }"
+              aria-label="Copy link to this request"
+              title="Copy link to this request"
+              icon="i-lucide-link"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              @click="copyRequestLink(req.id)"
+            />
+            <RequestRemoveButton
+              v-if="isMine(req)"
+              :request="req"
+              @removed="refresh()"
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   accountKey,
-  byStrength,
+  byDisplayPreference,
   confirmationClaim,
   providerIcon,
   providerLabel,
@@ -38,15 +38,32 @@ const route = useRoute()
  * also why there is no undo: getting it back means going to the provider again,
  * and the button says "Remove" rather than anything softer for that reason.
  */
+const error = ref('')
+const changingPrimary = ref<string | null>(null)
+
+async function makePrimary(identity: RequesterIdentity) {
+  changingPrimary.value = accountKey(identity)
+  error.value = ''
+  try {
+    await $fetch('/api/verify/primary', { method: 'PATCH', body: { account: accountKey(identity) } })
+    await refresh()
+  } catch {
+    error.value = 'Could not change your primary profile. Please try again.'
+  } finally {
+    changingPrimary.value = null
+  }
+}
+
 const detaching = ref<string | null>(null)
 
 async function detach(identity: RequesterIdentity) {
   const key = accountKey(identity)
+  error.value = ''
   detaching.value = key
   try {
     await $fetch('/api/verify/discard', { method: 'POST', body: { account: key } })
   } catch {
-    // Even if the call fails, re-reading below tells us where we actually stand.
+    error.value = 'Could not remove this profile. Choose another primary profile before removing this one.'
   } finally {
     await refresh()
     detaching.value = null
@@ -74,6 +91,14 @@ async function detach(identity: RequesterIdentity) {
     >
       <AccountEmails />
       <USeparator />
+      <p
+        v-if="error"
+        role="alert"
+        class="text-sm text-error"
+      >
+        {{ error }}
+      </p>
+
       <div class="flex flex-col gap-3">
         <h2 class="font-display text-lg font-semibold text-highlighted">
           Your profiles
@@ -92,15 +117,15 @@ async function detach(identity: RequesterIdentity) {
           class="flex flex-col gap-2"
         >
           <li
-            v-for="identity in byStrength(identities)"
+            v-for="identity in byDisplayPreference(identities)"
             :key="`${identity.provider}:${identity.subject}`"
-            class="flex items-start gap-3 rounded-lg ring ring-default bg-default p-3"
+            class="flex flex-wrap items-start gap-3 rounded-lg ring ring-default bg-default p-3"
           >
             <UIcon
               :name="providerIcon(identity.provider)"
               class="mt-0.5 size-5 shrink-0 text-muted"
             />
-            <div class="min-w-0">
+            <div class="min-w-0 flex-1">
               <p class="font-medium text-highlighted">
                 {{ identity.name }}
                 <span
@@ -119,25 +144,40 @@ async function detach(identity: RequesterIdentity) {
                 variant="subtle"
                 size="sm"
               />
+              <UBadge
+                v-if="identity.primary"
+                label="Primary"
+                size="sm"
+              />
+              <UButton
+                v-else
+                label="Make primary"
+                size="xs"
+                variant="ghost"
+                :loading="changingPrimary === accountKey(identity)"
+                :disabled="detaching !== null || changingPrimary !== null"
+                :aria-label="`Make ${identity.name} on ${providerLabel(identity.provider)} primary`"
+                @click="makePrimary(identity)"
+              />
               <UButton
                 icon="i-lucide-trash-2"
                 color="error"
                 variant="ghost"
                 size="xs"
                 :loading="detaching === accountKey(identity)"
-                :disabled="detaching !== null || identities.length <= 1"
+                :disabled="detaching !== null || changingPrimary !== null || identity.primary || identities.length <= 1"
                 :aria-label="`Remove ${identity.name} on ${providerLabel(identity.provider)}`"
-                :title="identities.length <= 1 ? 'Add another public account before removing this one.' : 'Remove'"
+                :title="identity.primary ? 'Choose another primary profile before removing this one.' : 'Remove'"
                 @click="detach(identity)"
               />
             </div>
           </li>
         </ul>
         <p
-          v-if="identities.length === 1"
+          v-if="identities.length > 0"
           class="mt-3 text-sm text-muted"
         >
-          Add another public account before removing this one.
+          Your primary profile appears first on your requests. Choose another primary before removing it.
         </p>
       </div>
 

@@ -11,5 +11,5 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'This request is no longer available.' })
   }
 
-  return toPublic(request)
+  return (await publicRequests([request]))[0]!
 })

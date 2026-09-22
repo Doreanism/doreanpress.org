@@ -1,4 +1,4 @@
-// Detach an account the reader attached — one of them, or all of them.
+// Detach a non-primary public profile.
 //
 // Removes the durable provider link from the reader's database account.
 // Quiet when there is nothing to discard — the reader's intent ("that account is
@@ -6,7 +6,7 @@
 // noise.
 //
 // `account` is the key from `accountKey`, which is what the client already has
-// for every attached profile. Absent, everything goes.
+// for every attached profile. The primary profile cannot be removed.
 interface Body {
   account?: string
 }

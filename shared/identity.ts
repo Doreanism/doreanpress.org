@@ -51,6 +51,8 @@ export type IdentityProvider
 export type Confirmation = 'control' | 'existence' | 'claimed'
 
 export interface RequesterIdentity {
+  /** Reader-selected display profile; unrelated to verification strength. */
+  primary?: boolean
   provider: IdentityProvider
   /**
    * What was actually checked. Never assume: an identity that reached us by
@@ -413,4 +415,9 @@ export function describeIdentity(identity: RequesterIdentity | null | undefined)
     case 'existence': return `${who} — named, not proved`
     default: return `${who} — claimed, nothing checked`
   }
+}
+
+/** Reader preference first, retaining verification order for legacy requests. */
+export function byDisplayPreference(identities: readonly RequesterIdentity[]): RequesterIdentity[] {
+  return byStrength(identities).sort((a, b) => Number(Boolean(b.primary)) - Number(Boolean(a.primary)))
 }

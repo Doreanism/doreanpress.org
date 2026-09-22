@@ -1,3 +1,5 @@
+import { findBook, type RequestItem } from '#shared/catalog'
+
 // Edit an open request. Only the account that posted it may change it — see
 // `requireRequestOwner`.
 //
@@ -7,6 +9,8 @@
 // it was made. A request that's already been sponsored is frozen: a copy is in
 // flight.
 interface Body {
+  items?: RequestItem[]
+  originalItems?: RequestItem[]
   message?: string
   name?: string
   email?: string
@@ -43,6 +47,20 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<Body>(event)
   const patch: Partial<BookRequest> = {}
   const invalid: string[] = []
+
+  if (body?.items !== undefined) {
+    if (JSON.stringify(body.originalItems) !== JSON.stringify(request.items)) {
+      throw createError({ statusCode: 409, statusMessage: 'This request changed. Refresh and try again.' })
+    }
+    if (!Array.isArray(body.items) || !body.items.length || body.items.some(item =>
+      !item || typeof item.slug !== 'string' || !findBook(item.slug)
+      || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 99
+    ) || new Set(body.items.map(item => item.slug)).size !== body.items.length) {
+      invalid.push('items (choose books with 1–99 copies each)')
+    } else {
+      patch.items = body.items.map(({ slug, quantity }) => ({ slug, quantity }))
+    }
+  }
 
   if (body?.message !== undefined) {
     const message = str(body.message, 1000)
@@ -92,7 +110,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'No changes supplied.' })
   }
 
-  const updated = await updateRequest(id, patch)
+  const updated = await updateRequest(id, patch, request)
   if (!updated) throw createError({ statusCode: 409, statusMessage: 'This request changed. Refresh and try again.' })
   return toPublic(updated)
 })

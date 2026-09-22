@@ -6,5 +6,5 @@
 export default defineEventHandler(async (event) => {
   setResponseHeader(event, 'Cache-Control', 'no-store')
   const open = await listOpenRequests()
-  return open.filter(r => !r.hidden).map(toPublic)
+  return publicRequests(open.filter(r => !r.hidden))
 })

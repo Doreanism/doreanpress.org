@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import RequestItemsEditor from '~/components/RequestItemsEditor.vue'
+
 const { signedIn } = useSignedIn()
 
 interface OrderLine {
@@ -81,9 +83,15 @@ function formatDate(iso: string) {
           class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-lg ring ring-default bg-default p-4"
         >
           <div class="min-w-0">
-            <p class="font-display font-semibold text-highlighted">
-              {{ line.titles.join(', ') || 'Books no longer in the catalog' }}
-            </p>
+            <div class="flex items-start gap-1">
+              <p class="font-display font-semibold text-highlighted">
+                {{ line.titles.join(', ') || 'Books no longer in the catalog' }}
+              </p>
+              <RequestItemsEditor
+                v-if="line.status === 'open'"
+                :request="line"
+              />
+            </div>
             <p class="text-sm text-muted">
               {{ formatDate(line.createdAt) }}
             </p>
@@ -94,6 +102,10 @@ function formatDate(iso: string) {
               :label="shippingLabel(line)"
               color="neutral"
               variant="subtle"
+            />
+            <RequestRemoveButton
+              v-if="line.status === 'open'"
+              :request="line"
             />
             <UButton
               v-if="line.trackingUrl"

@@ -98,7 +98,7 @@ const providers = 'X, Facebook, LinkedIn, GitHub, GitLab, Twitch, TikTok and Blu
           Keeping and deleting information
         </h2>
         <p>
-          You can detach a public account when another verified public account remains, or withdraw an open request yourself. Removing your final public identity requires deleting your reader account. To see, correct, or delete anything else we hold, email <ULink
+          You can detach a public account after choosing another verified public account as primary, or withdraw an open request yourself. Removing your final public identity requires deleting your reader account. To see, correct, or delete anything else we hold, email <ULink
             class="text-primary"
             to="mailto:info@doreanpress.org"
           >info@doreanpress.org</ULink> from the address you used. We aim to answer within 30 days. Full instructions are on our <ULink

@@ -19,7 +19,7 @@ useSeoMeta({
           Remove an attached account
         </h2>
         <p>
-          You can remove an attached public account when another remains. Add and verify a replacement before removing your last public account. To remove the final identity, withdraw your open requests and contact us to delete your reader account. We delete its attached verification records; completed donation, fulfillment, security, and accounting records may be retained.
+          You can remove an attached public account after choosing another profile as primary. Attach a replacement first if you only have one profile. To remove the final identity, withdraw your open requests and contact us to delete your reader account. We delete its attached verification records; completed donation, fulfillment, security, and accounting records may be retained.
         </p>
       </section>
 

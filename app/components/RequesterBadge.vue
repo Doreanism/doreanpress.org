@@ -24,16 +24,17 @@
 // means somebody typed a name into a box. A sponsor deciding between two cards
 // deserves to know which they are looking at.
 //
-// A request may carry several accounts, and every one of them is drawn, each
-// with its own sentence. Showing only the best-checked one would let it vouch
-// for the others silently — which is the same flattening as above, wearing a
-// different hat. Strongest first, so the card reads down from its best evidence.
+// Show the preferred profile first; expanding reveals every other profile.
+// Historical unverified profiles retain their explanatory notes.
 import { ULink } from '#components'
-import { byStrength, providerLabel, providerIcon, type RequesterIdentity } from '#shared/identity'
+import { byDisplayPreference, providerLabel, providerIcon, type RequesterIdentity } from '#shared/identity'
 
 const props = defineProps<{ requesters: RequesterIdentity[] }>()
 
-const attached = computed(() => byStrength(props.requesters ?? []))
+const attached = computed(() => byDisplayPreference(props.requesters ?? []))
+
+const expanded = ref(false)
+const profilesId = useId()
 
 const label = (r: RequesterIdentity) => providerLabel(r.provider)
 const icon = (r: RequesterIdentity) => providerIcon(r.provider)
@@ -62,10 +63,12 @@ function since(r: RequesterIdentity) {
 
   <div
     v-else
+    :id="profilesId"
     class="flex flex-col gap-3"
   >
     <div
-      v-for="requester in attached"
+      v-for="(requester, index) in attached"
+      v-show="index === 0 || expanded"
       :key="`${requester.provider}:${requester.subject}`"
       class="flex flex-col gap-1.5"
     >
@@ -116,24 +119,8 @@ function since(r: RequesterIdentity) {
         />
       </component>
 
-      <!--
-        One line per account, always present, saying which of the three checks
-        happened to *that* one. It sits outside the link so it cannot be mistaken
-        for part of the profile, and it is worded for someone who will read
-        exactly one of these cards.
-      -->
       <p
-        v-if="isProved(requester)"
-        class="flex items-center gap-1 px-0.5 text-xs text-dimmed"
-      >
-        <UIcon
-          name="i-lucide-shield-check"
-          class="size-3 shrink-0 text-primary"
-        />
-        Signed in with {{ label(requester) }} — the account is theirs.
-      </p>
-      <p
-        v-else-if="isTold(requester)"
+        v-if="isTold(requester)"
         class="flex items-start gap-1 px-0.5 text-xs text-dimmed"
       >
         <UIcon
@@ -147,7 +134,7 @@ function since(r: RequesterIdentity) {
         </span>
       </p>
       <p
-        v-else
+        v-else-if="!isProved(requester)"
         class="flex items-start gap-1 px-0.5 text-xs text-dimmed"
       >
         <UIcon
@@ -160,5 +147,17 @@ function since(r: RequesterIdentity) {
         </span>
       </p>
     </div>
+    <UButton
+      v-if="attached.length > 1"
+      :label="expanded ? 'Show fewer profiles' : `Show ${attached.length - 1} more ${attached.length === 2 ? 'profile' : 'profiles'}`"
+      :icon="expanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+      :aria-expanded="expanded"
+      :aria-controls="profilesId"
+      color="neutral"
+      variant="link"
+      size="xs"
+      class="self-start"
+      @click="expanded = !expanded"
+    />
   </div>
 </template>

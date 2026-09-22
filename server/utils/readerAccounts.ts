@@ -7,11 +7,6 @@ interface AccountRow {
   email?: string | null
 }
 
-interface IdentityRow {
-  identity: RequesterIdentity | string
-  provider_email?: string | null
-}
-
 let schema: Promise<void> | null = null
 
 function ensureSchema() {
@@ -26,6 +21,7 @@ function ensureSchema() {
           updated_at text NOT NULL
         )
       `
+      await sql`ALTER TABLE reader_accounts ADD COLUMN IF NOT EXISTS primary_identity text`
       await sql`
         CREATE TABLE IF NOT EXISTS reader_emails (
           email text PRIMARY KEY,
@@ -192,17 +188,46 @@ export async function listAttachedIdentities(event: H3Event): Promise<{
   await ensureSchema()
   const accountId = await sessionAccountId(event)
   if (!accountId) return { identities: [] }
-  const [account, rows] = await Promise.all([
-    accountRow(accountId),
-    db()`
-      SELECT identity, provider_email FROM reader_identities
-       WHERE account_id = ${accountId}
-       ORDER BY attached_at ASC
-    ` as unknown as Promise<IdentityRow[]>
+  const account = await accountRow(accountId)
+  const profiles = await publicAccountIdentities([accountId])
+  return { identities: profiles.get(accountId) ?? [], email: account?.email || undefined }
+}
+
+/** Current public profiles only; never expose provider emails or account ids. */
+export async function publicAccountIdentities(accountIds: string[]): Promise<Map<string, RequesterIdentity[]>> {
+  const profiles = new Map<string, RequesterIdentity[]>()
+  if (!accountIds.length) return profiles
+  await ensureSchema()
+  const rows = await db()`
+    SELECT i.account_id, i.identity,
+      row_number() OVER (PARTITION BY i.account_id ORDER BY
+        (i.provider || ':' || i.subject = a.primary_identity) DESC NULLS LAST,
+        i.attached_at, i.provider, i.subject) = 1 AS primary
+    FROM reader_identities i JOIN reader_accounts a ON a.id = i.account_id
+    WHERE i.account_id = ANY(${accountIds}::text[])
+    ORDER BY i.attached_at, i.provider, i.subject
+  `
+  for (const row of rows) {
+    const id = String(row.account_id)
+    const identities = profiles.get(id) ?? []
+    identities.push({ ...identityFrom(row.identity), primary: Boolean(row.primary) })
+    profiles.set(id, identities)
+  }
+  return profiles
+}
+
+export async function setPrimaryIdentity(accountId: string, key: string): Promise<void> {
+  await ensureSchema()
+  const sql = db()
+  const results = await sql.transaction([
+    sql`SELECT id FROM reader_accounts WHERE id = ${accountId} FOR UPDATE`,
+    sql`UPDATE reader_accounts SET primary_identity = ${key}
+      WHERE id = ${accountId} AND EXISTS (
+        SELECT 1 FROM reader_identities WHERE account_id = ${accountId}
+          AND provider || ':' || subject = ${key}
+      ) RETURNING id`
   ])
-  const identities = rows.map(row => identityFrom(row.identity))
-  const email = account?.email || rows.find(row => row.provider_email)?.provider_email || undefined
-  return { identities, email: email || undefined }
+  if (!results[1]!.length) throw createError({ statusCode: 422, statusMessage: 'Attach that profile before making it primary.' })
 }
 
 export async function detachIdentity(event: H3Event, key?: string): Promise<void> {
@@ -210,7 +235,7 @@ export async function detachIdentity(event: H3Event, key?: string): Promise<void
   const accountId = await sessionAccountId(event)
   if (!accountId) return
   const lastIdentity = () => createError({ statusCode: 409, statusMessage: 'LAST_IDENTITY', data: { code: 'LAST_IDENTITY' },
-    message: 'Add another public account before removing this one.' })
+    message: 'Choose another primary profile before removing this one.' })
   if (!key) throw lastIdentity()
   const split = key.indexOf(':')
   if (split < 1) return
@@ -223,7 +248,13 @@ export async function detachIdentity(event: H3Event, key?: string): Promise<void
     sql`SELECT id FROM reader_accounts WHERE id = ${accountId} FOR UPDATE`,
     sql`DELETE FROM reader_identities WHERE account_id = ${accountId}
       AND provider = ${provider} AND subject = ${subject}
-      AND (SELECT count(*) FROM reader_identities WHERE account_id = ${accountId}) > 1
+      AND provider || ':' || subject <> (
+        SELECT i.provider || ':' || i.subject
+        FROM reader_identities i JOIN reader_accounts a ON a.id = i.account_id
+        WHERE i.account_id = ${accountId}
+        ORDER BY (i.provider || ':' || i.subject = a.primary_identity) DESC NULLS LAST,
+          i.attached_at, i.provider, i.subject LIMIT 1
+      )
       RETURNING subject`,
     sql`SELECT subject FROM reader_identities WHERE account_id = ${accountId}
       AND provider = ${provider} AND subject = ${subject}`

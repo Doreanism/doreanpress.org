@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RequestItemsEditor from './RequestItemsEditor.vue'
 import { findBook } from '#shared/catalog'
 
 const props = defineProps<{ slug?: string, compact?: boolean, hideHeading?: boolean, showStatus?: boolean, editableMessages?: boolean }>()
@@ -115,15 +116,21 @@ function label(request: { status: string, deliveryStatus?: string }) {
               class="py-3 first:pt-0 last:pb-0"
             >
               <div class="flex flex-wrap items-start justify-between gap-2">
-                <ul class="min-w-0 space-y-1 text-sm font-medium text-highlighted">
-                  <li
-                    v-for="item in request.items"
-                    :key="item.slug"
-                  >
-                    <span class="mr-1 text-muted">{{ item.quantity }} ×</span>
-                    {{ findBook(item.slug)?.title || item.slug }}
-                  </li>
-                </ul>
+                <div class="flex min-w-0 items-start gap-1">
+                  <ul class="min-w-0 space-y-1 text-sm font-medium text-highlighted">
+                    <li
+                      v-for="item in request.items"
+                      :key="item.slug"
+                    >
+                      <span class="mr-1 text-muted">{{ item.quantity }} ×</span>
+                      {{ findBook(item.slug)?.title || item.slug }}
+                    </li>
+                  </ul>
+                  <RequestItemsEditor
+                    v-if="editableMessages && request.status === 'open'"
+                    :request="request"
+                  />
+                </div>
                 <UBadge
                   :label="label(request)"
                   color="neutral"
@@ -137,6 +144,11 @@ function label(request: { status: string, deliveryStatus?: string }) {
                   :message="request.message"
                   class="min-w-0 flex-1"
                   @saved="updateMessage"
+                />
+                <RequestRemoveButton
+                  v-if="editableMessages && request.status === 'open'"
+                  :request="request"
+                  class="ms-auto"
                 />
                 <UButton
                   v-if="request.trackingUrl"

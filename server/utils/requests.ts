@@ -59,9 +59,9 @@ export interface BookRequest {
    * see who they are giving to. Empty only on rows posted before any of this was
    * required — those stay visible, marked unverified.
    *
-   * Ordered as the reader attached them; the board sorts by strength for
-   * display. Every one of them is shown: see `primaryIdentity` for why the
-   * strongest is never drawn alone.
+   * Historical snapshot for ownership and request limits. The public board
+   * resolves current profiles from the reader account and shows the preferred
+   * one first, with the remaining profiles available to expand.
    */
   requesters: RequesterIdentity[]
   // ── private contact + shipping (never exposed publicly) ──
@@ -472,9 +472,10 @@ export async function listOpenRequestsAtDestination(destination: string): Promis
   return open.filter(r => destinationKey(r) === destination)
 }
 
-export async function updateRequest(id: string, patch: Partial<BookRequest>): Promise<BookRequest | null> {
-  const current = await getRequest(id)
-  if (!current) return null
+export async function updateRequest(id: string, patch: Partial<BookRequest>, expected?: BookRequest): Promise<BookRequest | null> {
+  await ensureRequestsSchema()
+  const current = expected ?? await getRequest(id)
+  if (!current || current.status !== 'open') return null
   const next = { ...current, ...patch }
   const rows = await db()`UPDATE book_requests SET
     items = ${JSON.stringify(next.items)}::jsonb, message = ${next.message}, name = ${next.name},

@@ -13,6 +13,7 @@ import {
   isSameAccount,
   hasControl,
   primaryIdentity,
+  byDisplayPreference,
   sharesAccount,
   providerIcon,
   providerLabel,
@@ -294,5 +295,14 @@ describe('sharesAccount', () => {
     expect(sharesAccount([], [ada])).toBe(false)
     expect(sharesAccount([ada], [])).toBe(false)
     expect(sharesAccount(null, undefined)).toBe(false)
+  })
+})
+
+describe('profile display preference', () => {
+  it('puts the selected profile first without changing the verification ranking', () => {
+    const first = { provider: 'github', subject: 'one', name: 'One', confirmation: 'control', verifiedAt: 'now' } as const
+    const preferred = { ...first, subject: 'two', primary: true }
+    expect(byDisplayPreference([first, preferred])).toEqual([preferred, first])
+    expect(primaryIdentity([first, preferred])).toBe(first)
   })
 })
