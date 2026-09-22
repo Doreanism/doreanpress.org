@@ -15,7 +15,16 @@ useSeoMeta({
 const route = useRoute()
 const toast = useToast()
 const sponsoringId = ref<string | null>(null)
-const handoff = ref<{ url: string, recommendation: string, question: string } | null>(null)
+const handoff = ref<{ url: string, embed: boolean, recommendation: string, question: string } | null>(null)
+
+async function copyRecommendation(code: string) {
+  try {
+    await navigator.clipboard.writeText(code)
+    toast.add({ title: 'Code copied', icon: 'i-lucide-copy', color: 'primary' })
+  } catch {
+    toast.add({ title: 'Select the code and copy it', color: 'neutral' })
+  }
+}
 
 // One card per order, and a reader has one open order per address: asking again
 // for the same doorstep adds the books to what is already here rather than
@@ -128,10 +137,41 @@ function formatDate(iso: string) {
       <h2 class="font-semibold">
         Your recommendation
       </h2>
-      <p>Copy this code into the “{{ handoff.question }}” field on Zeffy: <strong class="break-all">{{ handoff.recommendation }}</strong></p>
+      <p>
+        Copy this code into the “{{ handoff.question }}” field of the gift form: <strong class="break-all">{{ handoff.recommendation }}</strong>
+        <UButton
+          aria-label="Copy recommendation code"
+          icon="i-lucide-copy"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          @click="copyRecommendation(handoff.recommendation)"
+        />
+      </p>
       <p>This request is reserved for 30 minutes. A late gift, or a gift without this code, goes to the general Give a Book balance.</p>
-      <p>Zeffy’s own contribution is optional and may be set to zero. No goods or services are provided to you in return for your gift.</p>
+      <p>Gifts are processed by Zeffy for Lakewood Village Baptist Church, whose name appears on your receipt. Zeffy’s own contribution is optional and may be set to zero. No goods or services are provided to you in return for your gift.</p>
+      <template v-if="handoff.embed">
+        <!-- Zeffy's embed shows only the payment fields, so the form reads as part of this page. -->
+        <div class="relative h-[1200px] w-full overflow-hidden rounded-lg">
+          <iframe
+            title="Gift form powered by Zeffy"
+            :src="handoff.url"
+            class="absolute inset-0 size-full border-0"
+            allow="payment"
+            allowpaymentrequest
+            allowtransparency="true"
+          />
+        </div>
+        <p class="text-xs text-dimmed">
+          Form not loading? <ULink
+            :to="handoff.url"
+            target="_blank"
+            class="text-primary"
+          >Open it in a new tab</ULink>.
+        </p>
+      </template>
       <UButton
+        v-else
         :to="handoff.url"
         target="_blank"
         label="Continue to Zeffy"

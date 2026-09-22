@@ -27,5 +27,6 @@ export default defineEventHandler(async (event) => {
   if (!results[1]!.length) throw createError({ statusCode: 409, statusMessage: 'This request is unavailable or another donor is considering it. Please choose another request or try later.' })
   // Zeffy's metadata is reserved for future use. A configured checkout question
   // transports the recommendation explicitly; do not invent URL metadata support.
-  return { id: reservationId, url: url.href, recommendation: reservationId, question: config.recommendationQuestion }
+  // An embed URL (zeffy.com/embed/…) is shown inside the page; a campaign URL opens on Zeffy.
+  return { id: reservationId, url: url.href, embed: url.pathname.startsWith('/embed/'), recommendation: reservationId, question: config.recommendationQuestion }
 })

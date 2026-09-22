@@ -14,7 +14,14 @@ The homepage's pre-existing production “Coming Soon” gate remains in place.
    URL metadata or custom checkout sessions. Reservations last 30 minutes.
    Missing, expired, hidden, changed, or closed recommendations allocate gifts
    to the general ministry balance. Selected books are reserved together; a completed gift moves those books into fulfillment and leaves any remaining copies on the board.
-3. Configure `NUXT_ZEFFY_CAMPAIGN_URL`, `NUXT_ZEFFY_CAMPAIGN_ID`, and
+3. For `NUXT_ZEFFY_CAMPAIGN_URL`, prefer the campaign's embed URL (Campaigns →
+   ⋯ → Share → More ways to share → Embed → Campaign; the iframe `src`,
+   `https://www.zeffy.com/embed/donation-form/…`). `/give` then shows the form
+   inline, with only the payment fields and no church branding; a plain campaign
+   URL instead links out to Zeffy. The Zeffy/Stripe DBA must match the bank
+   account's name (Silicon Valley Reformed Baptist Church), not "Dorean Press";
+   the card statement descriptor is "Dorean Press". Receipts always carry the
+   church's legal name. Configure `NUXT_ZEFFY_CAMPAIGN_URL`, `NUXT_ZEFFY_CAMPAIGN_ID`, and
    `NUXT_ZEFFY_WEBHOOK_SECRET`. Subscribe to `payment.completed` at
    `https://doreanpress.org/api/zeffy/webhook`. The handler checks the raw-body
    HMAC, a five-minute timestamp tolerance, campaign, successful status, currency,
