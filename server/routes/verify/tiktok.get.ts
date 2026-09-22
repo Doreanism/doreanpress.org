@@ -1,3 +1,5 @@
+import type { H3Event } from 'h3'
+
 // Prove you hold a TikTok account. Callback URL to register: <site>/verify/tiktok
 //
 // `user.info.basic` gives a display name and photo; the handle and the profile
@@ -17,9 +19,25 @@ interface TikTokUser {
   is_verified?: boolean
 }
 
-const handler = defineOAuthTikTokEventHandler({
+/**
+ * Whether this key is a Sandbox one, which decides whether PKCE is sent.
+ *
+ * `nuxt-auth-utils` calls that switch `sandbox` and defaults it to
+ * `import.meta.dev` — the build, not the credentials. Those came apart the
+ * moment a Sandbox key ran in a production build for an app review: the
+ * authorisation went out without `code_challenge`, TikTok refused the exchange,
+ * and the reader came back with nothing attached and nothing said. A Sandbox
+ * key announces itself in its prefix, so ask the key.
+ */
+function isSandboxKey(event: H3Event): boolean {
+  const key = (useRuntimeConfig(event).oauth as { tiktok?: { clientKey?: string } })?.tiktok?.clientKey
+  return Boolean(key?.startsWith('sba'))
+}
+
+const tiktokHandler = (event: H3Event) => defineOAuthTikTokEventHandler({
   config: {
     scope: ['user.info.basic', 'user.info.profile'],
+    sandbox: isSandboxKey(event),
     // Always show TikTok's consent page, even to a reader who has authorised us
     // before. Without it TikTok bounces a signed-in browser straight back, which
     // attaches whichever account happens to be signed in — the consent page is
@@ -58,5 +76,5 @@ const handler = defineOAuthTikTokEventHandler({
 
 export default defineEventHandler((event) => {
   if (!getQuery(event).code) rememberReturnTo(event)
-  return handler(event)
+  return tiktokHandler(event)(event)
 })

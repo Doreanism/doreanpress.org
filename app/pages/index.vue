@@ -8,11 +8,8 @@
 // Replacing the condition is the whole of launching.
 const comingSoon = !import.meta.dev
 
-const { add } = useCart()
-
 async function requestFreeCopy() {
-  add('the-doctrine-of-simony')
-  await navigateTo({ path: '/cart', query: { request: '1' } })
+  await navigateTo({ path: '/catalog/the-doctrine-of-simony', query: { request: '1' } })
 }
 
 useSeoMeta(comingSoon

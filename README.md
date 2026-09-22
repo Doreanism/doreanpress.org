@@ -2,139 +2,95 @@
 
 The website for **Dorean Press** — a publishing ministry built on the conviction
 that the gospel is freely given (Matthew 10:8, *“freely you have received; freely
-give”*). Books are printed on demand through Lulu and sold at honest cost.
+give”*). Print and Kindle editions are sold through Amazon; gifts for readers
+who cannot pay go through Zeffy.
 
-Built with **Nuxt 4**, **Nuxt UI**, **Stripe**, and the **Lulu Print API**.
+Built with **Nuxt 4**, **Nuxt UI**, and Neon Postgres.
 
 ## Features
 
 - **Catalog** of titles (`shared/catalog.ts` is the single source of truth for
-  prices + print specs, shared by the UI and the server).
-- **Buy a book** — Stripe Checkout collects payment + shipping address; a webhook
-  creates a Lulu print job shipped to the customer.
+  book data, shared by the UI and the server), each linking to its Amazon listing.
 - **Give a Book (pay-it-forward)** — a reader who can't pay submits a request;
-  another visitor sponsors it; we print and ship it to the requester, then mark
-  the request fulfilled.
+  another visitor gives toward it through Zeffy; the press orders and ships it
+  to the requester, then marks the request fulfilled.
 - **About** page and a hand-drawn SVG logo.
 
 ## Setup
 
 ```bash
 npm install
-cp .env.example .env   # printing and email mock out; requests work with no keys
+cp .env.example .env   # email goes to Mailpit; requests work with no keys
 npm run dev            # http://localhost:3000
 ```
+
+`npm run dev` first starts the local Postgres, Neon HTTP proxy, and Mailpit
+services through Docker Compose and waits for startup before launching Nuxt.
+Docker must be running. Mailpit's inbox is at http://localhost:8025.
+The services stay running when Nuxt stops; use `npm run dev:services:stop`
+to stop them while keeping database data. To start just the services, use
+`npm run dev:services`.
 
 > Note: port 3000 may be in use by another local app — `PORT=3100 npm run dev`
 > to pick another.
 
 ## Environment
 
-See `.env.example`. With no keys, **Lulu runs in mock mode** (no real print
-orders) and Stripe is disabled. To go live, set the `NUXT_*` variables.
+See `.env.example`. With no keys, email is logged or caught by Mailpit and
+donations stay disabled. To go live, set the `NUXT_*` variables.
 
-Free-book requests need a public account behind them, by one of two routes, and
-neither has a mock mode. **Naming an account** (GitHub, GitLab,
-Bluesky, Mastodon) needs no credentials at all — public read-only APIs — so the request flow works out of the box. **Signing in** (X, Facebook,
-LinkedIn, GitHub, Twitch, TikTok) is the stronger check and needs real OAuth
-credentials; GitHub is the cheapest to register. The two are not equivalent and
-the site says which one happened — see
-[docs/verified-requests.md](docs/verified-requests.md).
+Readers sign in or create an account at `/account` using an emailed sign-in
+link (ten-minute expiry, single use). Email verification is
+required before attaching social profiles or requesting books. A request still
+requires at least one public profile; its private contact email comes from the
+signed-in account. Social OAuth links profiles and does not sign into another
+reader account. A profile already linked elsewhere cannot be moved this way.
 
-Failing both, a reader can **just tell us** where to find them — pick a social
-media, type a username, and we check nothing at all beyond the shape of the
-handle. That is the fallback for X, Facebook, LinkedIn, Twitch and TikTok, which
-have no public API to read, and it applies only while their credentials are
-blank. The board says plainly which of the three happened.
+Accounts and login challenges persist in Postgres. Link sends are limited to
+five per inbox per fifteen minutes, including resends and successful logins.
+Configure `NUXT_SMTP_URL` or `NUXT_BREVO_API_KEY` for delivery; locally, use
+Mailpit or the mock-email console output. Delivery errors are reported to the
+sign-in form. Localhost links preserve the running port; open them on the
+development machine. The development-only Mailpit button in the lower-right
+corner opens the local inbox at `http://localhost:8025`; its chip shows the inbox’s
+unread count and refreshes every ten seconds or when you return to the tab. Opening a link signs the reader in automatically and returns them to their
+original page. Plain HTTP GET requests do not consume links; scanners that run
+JavaScript may still use a link, in which case the reader can request a new one. Existing email
+accounts continue working; legacy provider-only sessions must verify an inbox
+before proceeding.
 
-No deployment offers the same provider two ways: each appears by the strongest
-route available for it, so configuring credentials for a provider removes it from
-the weaker lists at the same moment its button appears.
+The `/profiles` page manages both verified emails and social profiles. Additional
+emails are added only after a single-use link is opened in the requesting
+browser. Any verified email can sign into the same account. The primary email
+receives shipping and account notifications; choose another verified primary
+before removing it, and keep at least one email. An address already owned by a
+different account cannot be added. Requests, gifts, and queued notifications
+are bound to the account so primary changes and removals preserve history.
 
 | Variable | Purpose |
 | --- | --- |
-| `NUXT_PUBLIC_SITE_URL` | Base URL (Stripe success/cancel + OG images) |
+| `NUXT_PUBLIC_SITE_URL` | Canonical production URL (sign-in links, OG images) |
 | `NUXT_SESSION_PASSWORD` | Seals the identity-proof cookie (32+ chars) |
 | `NUXT_OAUTH_GITHUB_CLIENT_ID` / `..._SECRET` | Sign in with GitHub (also X, Facebook, LinkedIn, Twitch); optional |
 | `NUXT_OAUTH_TIKTOK_CLIENT_KEY` / `..._SECRET` | Sign in with TikTok — a *key*, not an id; optional |
-| `NUXT_STRIPE_SECRET_KEY` | Stripe secret key (test or live) |
-| `NUXT_STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
-| `NUXT_LULU_MOCK` | `true` to mock Lulu; `false` to call the real API |
-| `NUXT_LULU_CLIENT_KEY` / `NUXT_LULU_CLIENT_SECRET` | Lulu OAuth credentials |
-| `NUXT_LULU_BASE_URL` | `https://api.sandbox.lulu.com` or `https://api.lulu.com` |
-| `NUXT_LULU_CONTACT_EMAIL` | Contact email on print jobs |
-
-### Stripe webhook (local)
-
-```bash
-stripe listen --forward-to localhost:3000/api/stripe/webhook
-```
-
-Use the printed `whsec_…` as `NUXT_STRIPE_WEBHOOK_SECRET`. Fulfilment (Lulu print
-job creation) happens in `server/api/stripe/webhook.post.ts` on
-`checkout.session.completed`.
-
-### What Lulu charges
-
-The catalog's prices are typed by hand. To see what a copy really costs to
-print:
-
-```bash
-npm run lulu:prices
-npm run lulu:prices -- --country=GB --postcode=SW1A1AA --level=EXPEDITED --qty=5
-```
-
-`scripts/lulu-prices.ts` quotes every title through the site's own Lulu client
-and prints the per-copy print cost, Lulu's per-order fulfilment fee, the
-shipping for that destination, and how far each `priceCents` in
-`shared/catalog.ts` has drifted from it. It only reads — no print job is
-created. Without real credentials it quotes the mock and says so in large
-letters; those numbers are invented and must not be pasted into the catalog.
-
-Every figure is **excluding tax**, on purpose. Lulu adds the destination's
-sales tax to the quote, and that is the buyer's, not a cost of the book — a
-Springfield address adds 10.25% that an Oregon one does not. Comparing a
-tax-inclusive quote against `priceCents` measures the destination, not margin.
-
-Shipping is not flat: it scales with the number of copies, and the levels
-available depend on the POD package. `GROUND` returns "no shipping option
-found" for all three of the catalog's packages, so the working levels are
-`MAIL`, `PRIORITY_MAIL`, `EXPEDITED` and `EXPRESS`. A quote is only true for
-the address and quantity it was asked about — one flat rate cannot be right
-everywhere.
-
-### Lulu webhook
-
-`server/api/lulu/webhook.post.ts` receives print-job status changes, writes
-them back to the sponsored request, and emails the requester a tracking link
-when the job hits `SHIPPED`. Deliveries are authenticated via the
-`Lulu-HMAC-SHA256` header (HMAC of the body, keyed with the client secret);
-verification is skipped when no secret is configured (mock/dev).
-
-Register the subscription once per environment:
-
-```bash
-curl -X POST "$NUXT_LULU_BASE_URL/webhooks/" \
-  -H "Authorization: Bearer $LULU_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"topics": ["PRINT_JOB_STATUS_CHANGED"], "url": "https://doreanpress.org/api/lulu/webhook"}'
-```
+| `NUXT_BREVO_API_KEY` / `NUXT_SMTP_URL` | Email delivery (Brevo in production, Mailpit locally) |
+| `NUXT_ZEFFY_*` | Donation campaign and signed webhook; see the migration runbook |
+| `NUXT_EASYPOST_*` | Carrier tracking updates; optional |
+| `NUXT_MAINTENANCE_SECRET` | Bearer token for the daily `/api/ministry-maintenance` job |
 
 ## Architecture
 
 ```
-shared/catalog.ts              Authoritative book data (price + Lulu print spec)
-app/pages/                     Home, catalog, book detail, cart, give, checkout/*
+shared/catalog.ts              Authoritative book data
+app/pages/                     Home, catalog, book detail, give, orders, admin
 app/components/                AppLogo, BookCard, RequestFreeModal
-server/utils/stripe.ts         Stripe client
-server/utils/lulu.ts           Lulu Print API client (OAuth + mock fallback)
-server/utils/requests.ts       Pay-it-forward datastore (Netlify DB / Neon)
-scripts/lulu-prices.ts         Ask Lulu what each title costs to print
+server/utils/requests.ts       Pay-it-forward datastore (Neon Postgres)
+server/utils/zeffy.ts          Zeffy webhook verification and gift allocation
+server/utils/tracking.ts       EasyPost carrier tracking
 server/routes/verify/*         Sign-in challenge: prove an account you can log into
-server/api/checkout.post.ts    Create Stripe Checkout session (server-priced)
 server/api/requests/*          Create / list / sponsor book requests
-server/api/stripe/webhook.post Fulfil orders + sponsorships via Lulu
-server/api/lulu/webhook.post   Track print-job status; email tracking on SHIPPED
+server/api/zeffy/webhook.post  Record completed gifts
+server/api/easypost/webhook.post Delivery status updates
 ```
 
 To replace the file-backed datastore with a real database, swap the Nitro
@@ -143,7 +99,27 @@ stays the same.
 
 ## To do before launch
 
-- Replace the sample catalog entries + covers, and point each book's
-  `interiorPdfUrl` / `coverPdfUrl` / `podPackageId` at real print-ready files.
-- Add real Stripe + Lulu credentials and register the production webhooks
-  (Stripe → `/api/stripe/webhook`, Lulu → `/api/lulu/webhook`).
+- Replace the sample catalog entries + covers.
+- Configure Zeffy, Brevo, and (optionally) EasyPost in production and register
+  their webhooks (Zeffy → `/api/zeffy/webhook`, EasyPost → `/api/easypost/webhook`).
+
+## Amazon / Zeffy migration
+
+New print purchases now link to Amazon. New donations use a signed Zeffy
+webhook and expiring recommendation codes. The protected fulfillment queue at
+`/admin/fulfillment` includes order visibility controls, manual KDP ordering,
+copyable agent tasks, and private carrier tracking.
+
+See [the migration runbook](docs/ministry-migration.md) for campaign setup,
+administrator provisioning, environment variables, scheduled reconciliation,
+and the production cutover checklist. Live donations remain disabled until
+Zeffy is configured.
+
+Run isolated Postgres integration tests against the local Neon proxy with:
+
+```sh
+MINISTRY_DB_TEST=1 node --env-file=.env node_modules/vitest/vitest.mjs run test/ministry-db.test.ts
+```
+
+Each run creates and drops its own test schema; it does not clear application
+records. Ordinary `npm test` runs the unit suite and skips these database tests.

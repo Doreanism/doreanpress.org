@@ -11,10 +11,12 @@ import type { BookRequest } from './requests'
 /** What you are shown about an order coming to you. */
 export interface MineView {
   id: string
+  message: string
   items: RequestItem[]
   titles: string[]
   status: string
-  shippingStatus?: string
+  trackingUrl?: string
+  deliveryStatus?: string
   createdAt: string
   fulfilledAt?: string
 }
@@ -39,7 +41,6 @@ export interface GivenView {
   titles: string[]
   requesters: RequesterIdentity[]
   status: string
-  shippingStatus?: string
   createdAt: string
   fulfilledAt?: string
 }
@@ -47,12 +48,14 @@ export interface GivenView {
 export function toMineView(r: BookRequest): MineView {
   return {
     id: r.id,
+    message: r.message,
     items: r.items,
     titles: itemTitles(r.items),
     status: r.status,
-    shippingStatus: r.shippingStatus,
     createdAt: r.createdAt,
-    fulfilledAt: r.fulfilledAt
+    fulfilledAt: r.fulfilledAt,
+    trackingUrl: r.fulfillment?.recipientTrackingUrl,
+    deliveryStatus: r.fulfillment?.deliveryStatus
   }
 }
 
@@ -63,7 +66,6 @@ export function toGivenView(r: BookRequest): GivenView {
     titles: itemTitles(r.items),
     requesters: r.requesters,
     status: r.status,
-    shippingStatus: r.shippingStatus,
     createdAt: r.createdAt,
     fulfilledAt: r.fulfilledAt
   }

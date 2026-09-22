@@ -1,19 +1,10 @@
 <script setup lang="ts">
-// Terms of sale, and the page registered with Meta as the app's Terms of
-// Service URL (it pre-fills that field with facebook.com, which would show to
-// readers in the login dialog).
-//
-// Everything here describes how the site already behaves — print on demand
-// through Lulu, one open request per address, a sponsored request that can no
-// longer be withdrawn. The one section that is a decision rather than a
-// description is "If something goes wrong": nothing in the code sets a refund
-// policy, so this states one. Change it here if the press wants a different one.
 useSeoMeta({
   title: 'Terms',
-  description: 'The terms on which Dorean Press sells and gives away books: pricing, printing, delivery, and what happens if something goes wrong.'
+  description: 'How printed books, free-book requests, and donations work at Dorean Press.'
 })
 
-const updated = 'August 2026'
+const updated = 'September 2026'
 </script>
 
 <template>
@@ -21,53 +12,23 @@ const updated = 'August 2026'
     <UPageHeader
       :ui="{ title: 'font-display' }"
       title="Terms"
-      description="What you can expect from us when you order a book, and what we ask in return."
+      description="How printed books, free-book requests, and donations work."
     />
 
     <div class="mx-auto mt-10 max-w-3xl space-y-10 text-lg/8 text-toned">
       <p>
-        These terms cover buying a book from Dorean Press, asking for one on the Give a Book board, and paying for someone else's. They are meant to be read, so they are short.
+        Dorean Press is a ministry of Lakewood Village Baptist Church, doing business as Silicon Valley Reformed Baptist Church. These terms cover this website and the Give a Book ministry.
       </p>
 
       <section class="space-y-4">
         <h2 class="font-display text-2xl text-highlighted">
-          What we sell, and at what price
+          Printed books
         </h2>
         <p>
-          Every book is printed on demand through Lulu's print network and shipped directly to you. Nothing is warehoused. Prices cover printing, shipping, and the bare keeping of the press — we do not price for profit, and we do not run sales, because there is no margin to discount.
+          We link to Amazon for printed books. If you buy one there, you are buying from Amazon under Amazon's prices, delivery terms, return policy, and privacy policy. Dorean Press does not receive your payment or shipping details from an ordinary Amazon purchase.
         </p>
         <p>
-          Where a title allows it, the digital edition is free to download and always will be. Buying a printed copy is a convenience, not a condition of reading the book.
-        </p>
-        <p>
-          We show prices before you pay and take payment through Stripe. If a price is listed wrongly we will tell you before printing and cancel the order rather than charge you the difference.
-        </p>
-      </section>
-
-      <section class="space-y-4">
-        <h2 class="font-display text-2xl text-highlighted">
-          Printing and delivery
-        </h2>
-        <p>
-          Because each copy is made when you order it, allow time for printing as well as shipping. Delivery estimates come from Lulu and are estimates, not promises — customs and couriers are not ours to command. Risk in a book passes to you on delivery.
-        </p>
-        <p>
-          Get your shipping address right. An order already in printing cannot be redirected; write to us straight away and we will do what we can.
-        </p>
-      </section>
-
-      <section class="space-y-4">
-        <h2 class="font-display text-2xl text-highlighted">
-          If something goes wrong
-        </h2>
-        <p>
-          If a book arrives damaged, misprinted, incomplete, or is simply not the book you ordered, tell us within 30 days of delivery and we will reprint it or refund it, whichever you prefer. We will not ask you to post it back.
-        </p>
-        <p>
-          If a book never arrives, tell us and we will chase it, and reprint it if it is lost.
-        </p>
-        <p>
-          What we cannot do is take back a book you have changed your mind about: it was made for you, and an unwanted copy cannot go back on a shelf we do not have. If you have ordered by mistake, write to us immediately — before printing begins we can usually cancel and refund in full.
+          Where we offer a free digital edition, it is free to download and share under the licence stated in the book. Buying a printed copy is never a condition of reading it.
         </p>
       </section>
 
@@ -76,22 +37,43 @@ const updated = 'August 2026'
           Asking for a book
         </h2>
         <p>
-          Anyone may ask for a book they cannot pay for, and we would rather you asked than went without. Two things are asked of you in return: attach a public account you actually hold, by signing in at that provider, and give an address a courier can reach. The account is shown on the board because a stranger is being asked to pay, and they are entitled to see who they are helping.
+          If you cannot afford a printed copy, you may ask for one on the Give a Book board. Tell the truth, ask only for books you mean to read, and give us an address where Amazon can deliver. We may remove duplicate, misleading, or resale requests.
         </p>
         <p>
-          One open request per address. Asking again for the same doorstep adds books to the request already there rather than starting a second one. You can withdraw an open request at any time; once someone has sponsored it, a book is already being printed and it can no longer be pulled.
+          You must first sign in with a sign-in link sent to your email address, then attach a public account that is yours. The board shows that account, the books you asked for, and your message. It never shows your shipping name, address, phone number, or email address.
         </p>
         <p>
-          Please ask for what you will read. Requests we believe to be made in bad faith — resale, duplicate identities, addresses that are not yours — we will remove, and we would rather say that plainly than police it quietly.
+          You may withdraw an open request. If we have already placed the Amazon order, we may not be able to stop or redirect it.
         </p>
       </section>
 
       <section class="space-y-4">
         <h2 class="font-display text-2xl text-highlighted">
-          Paying for someone else's book
+          Giving toward a book
         </h2>
         <p>
-          Sponsoring a request is a gift, not a purchase: the book ships to the person who asked, and you receive a receipt rather than a parcel. Because the gift is paid straight into printing, a sponsorship cannot be reversed once the book is in production. You are not given the recipient's name, address, or email — only the public account they attached.
+          Gifts are made to Lakewood Village Baptist Church for its Dorean Press book ministry. Zeffy handles the payment and sends the receipt. You receive no book or other goods in return.
+        </p>
+        <p>
+          You may point us to a request you would like us to fill next. That is a recommendation, not a gift legally set aside for one person. The church keeps control of the funds and decides how to use them for the ministry. If the request closes, costs less than expected, or cannot be filled, we will use the money for another Give a Book request or another expense of the same ministry.
+        </p>
+        <p>
+          Zeffy may invite you to add an optional contribution to Zeffy itself. That amount does not come to us, and you may set it to zero.
+        </p>
+        <p>
+          Gifts are normally final once received. If you made a duplicate gift or entered the wrong amount, write to us promptly. We will help where we can, but we cannot promise a refund after the money has been used or an order has been placed.
+        </p>
+      </section>
+
+      <section class="space-y-4">
+        <h2 class="font-display text-2xl text-highlighted">
+          Printing and delivery
+        </h2>
+        <p>
+          We order author copies from Amazon by hand and send them to the requester. Printing and delivery times are estimates, not promises. Shipping costs and taxes vary, so the suggested gift may be a little more or less than the final order.
+        </p>
+        <p>
+          If a ministry copy is lost, damaged, or misprinted, email us. We will work with Amazon and, where appropriate, order a replacement. Please do not send the book back unless we ask you to.
         </p>
       </section>
 
@@ -100,25 +82,25 @@ const updated = 'August 2026'
           Copyright
         </h2>
         <p>
-          The books remain the property of their authors and publishers, under whatever licence each title carries. Buying a copy buys you the copy. Where a title is offered freely, share it as freely as we gave it.
+          Each book remains under the copyright and licence stated in that book. A printed purchase gives you the copy, not the copyright. A free digital edition may be shared only as its licence allows.
         </p>
       </section>
 
       <section class="space-y-4">
         <h2 class="font-display text-2xl text-highlighted">
-          Reaching us
+          Contact
         </h2>
         <p>
-          Anything at all — an order, a request, a mistake we have made: <ULink
+          Questions, mistakes, or delivery problems: <ULink
             class="text-primary"
-            to="mailto:hello@doreanpress.org"
-          >hello@doreanpress.org</ULink>. What we do with your information is set out in our <ULink
+            to="mailto:info@doreanpress.org"
+          >info@doreanpress.org</ULink>. Our <ULink
             class="text-primary"
             to="/privacy"
-          >privacy policy</ULink>.
+          >privacy policy</ULink> explains what we do with personal information.
         </p>
         <p class="text-base text-muted">
-          Last updated {{ updated }}.
+          Lakewood Village Baptist Church · EIN 94-2878622 · Last updated {{ updated }}.
         </p>
       </section>
     </div>

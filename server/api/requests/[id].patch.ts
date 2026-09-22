@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
     else patch.name = name
   }
   if (body?.email !== undefined) {
-    const email = str(body.email, 200)
+    const { email } = await requireEmailAccount(event, 'changing your request')
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) invalid.push('email')
     else patch.email = email
   }
@@ -93,5 +93,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const updated = await updateRequest(id, patch)
-  return toPublic(updated!)
+  if (!updated) throw createError({ statusCode: 409, statusMessage: 'This request changed. Refresh and try again.' })
+  return toPublic(updated)
 })

@@ -22,8 +22,14 @@ logs
 # Local env files
 .env
 .env.*
+.env-production
 !.env.example
 
 # Local Claude Code settings
 .claude/settings.local.json
 .claude/worktrees/
+
+# Local planning and working notes
+sandbox/
+.vercel
+.env*

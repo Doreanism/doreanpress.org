@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { findBook, summarizeTitles, type RequestItem } from '#shared/catalog'
-import { accountKey, byStrength, providerLabel, type RequesterIdentity } from '#shared/identity'
+import type { RequestItem } from '#shared/catalog'
+import { byStrength } from '#shared/identity'
+import type { BookRequest } from '~~/server/utils/requests'
 
 // The whole set of items is posted as ONE request — an order a sponsor funds in
 // full — rather than a separate posting per title.
@@ -23,19 +24,40 @@ const toast = useToast()
 const route = useRoute()
 const router = useRouter()
 
-// Asking for a free book requires a public account behind it, so that is the
-// first thing the form asks for — see the template. The rest of the form stays
-// visible underneath, because a reader deciding whether to bother should be able
-// to see everything being asked of them, not just the gate.
-const { identities, email: providerEmail, verified, refresh: refreshProof } = useIdentityProof()
-
-/** Attached accounts, best-checked first, as the board will draw them. */
+const { identities, verified, refresh: refreshProof } = useIdentityProof()
+const { signedIn, refresh: refreshAccount } = useSignedIn()
 const attached = computed(() => byStrength(identities.value))
+const checkingAccount = ref(false)
+const deliveryAddresses = ref<Pick<BookRequest, 'id' | 'name' | 'address'>[]>([])
+const addressesLoading = ref(false)
+const addressesError = ref('')
+const selectedAddress = ref('')
 
-const attachedCount = computed(() => {
-  const used = identities.value.length
-  return `${used} ${used === 1 ? 'profile' : 'profiles'} attached to your account.`
+// Only one dialog is open at a time. Returning from the provider or losing a
+// session selects the appropriate step without discarding the request draft.
+const loginOpen = computed({
+  get: () => open.value && !signedIn.value?.email,
+  set: (value: boolean) => { if (!value) open.value = false }
 })
+const accountOpen = computed({
+  get: () => open.value && Boolean(signedIn.value?.email) && !verified.value,
+  set: (value: boolean) => { if (!value) open.value = false }
+})
+const requestOpen = computed({
+  get: () => open.value && Boolean(signedIn.value?.email) && verified.value,
+  set: (value: boolean) => { if (!value) open.value = false }
+})
+
+async function beginRequest() {
+  if (checkingAccount.value) return
+  checkingAccount.value = true
+  try {
+    await Promise.all([refreshAccount(), refreshProof()])
+    open.value = true
+  } finally {
+    checkingAccount.value = false
+  }
+}
 
 // The challenge means leaving the site, so the modal can't survive the round
 // trip on its own. It asks the provider to come back to this page with a marker
@@ -46,22 +68,11 @@ const REOPEN_FLAG = 'request'
 const challengeRedirect = computed(() =>
   router.resolve({ path: route.path, query: { ...route.query, [REOPEN_FLAG]: '1' } }).fullPath)
 
-const titles = computed(() =>
-  props.items
-    .map(item => findBook(item.slug)?.title)
-    .filter((t): t is string => Boolean(t)))
-
-const summary = computed(() => {
-  if (titles.value.length === 0) return ''
-  if (titles.value.length > 2) return `these ${titles.value.length} books`
-  return summarizeTitles(titles.value.map(t => `“${t}”`))
-})
+const formId = useId()
 
 const form = reactive({
-  message: '',
   name: '',
   email: '',
-  phone: '',
   line1: '',
   line2: '',
   city: '',
@@ -70,9 +81,43 @@ const form = reactive({
   country: 'US'
 })
 
+watch([requestOpen, () => signedIn.value?.accountId], async ([isOpen], _previous, onCleanup) => {
+  let cancelled = false
+  onCleanup(() => {
+    cancelled = true
+  })
+  deliveryAddresses.value = []
+  selectedAddress.value = ''
+  addressesError.value = ''
+  addressesLoading.value = false
+  if (!isOpen) return
+  addressesLoading.value = true
+  try {
+    const addresses = await $fetch('/api/account/delivery-addresses')
+    if (!cancelled) deliveryAddresses.value = addresses
+  } catch {
+    if (!cancelled) addressesError.value = 'Could not load your previous addresses. You can enter your delivery details below.'
+  } finally {
+    if (!cancelled) addressesLoading.value = false
+  }
+})
+
+function chooseAddress(id: string) {
+  selectedAddress.value = id
+  const saved = deliveryAddresses.value.find(address => address.id === id)
+  Object.assign(form, saved
+    ? {
+        name: saved.name, ...saved.address,
+        line2: saved.address.line2 || '', state: saved.address.state || ''
+      }
+    : {
+        name: '', line1: '', line2: '', city: '', state: '', postalCode: '', country: 'US'
+      })
+}
+
 function reset() {
   Object.assign(form, {
-    message: '', name: '', email: '', phone: '',
+    name: '', email: '',
     line1: '', line2: '', city: '', state: '', postalCode: '', country: 'US'
   })
 }
@@ -145,47 +190,31 @@ onMounted(() => {
   watch([form, prefilled], saveDraft, { deep: true })
 
   if (route.query[REOPEN_FLAG] !== '1') return
-  open.value = true
-  const { [REOPEN_FLAG]: _flag, ...query } = route.query
-  router.replace({ query })
+  // Wait for hydration before refreshing; otherwise useFetch can reuse the
+  // initial payload instead of checking the account returned by the provider.
+  onNuxtReady(async () => {
+    await beginRequest()
+    const { [REOPEN_FLAG]: _flag, ...query } = route.query
+    await router.replace({ query })
+  })
 })
 
 // A provider already told us a name, and sometimes an email, so those fields
 // start filled — and refill as accounts come and go, unless the reader has
 // edited them since (see `prefilled`). The best-checked account supplies the
 // name, because that is the one whose name is most likely to be their real one.
-watch([() => open.value, attached, providerEmail], ([isOpen]) => {
+watch([() => open.value, attached, signedIn], ([isOpen]) => {
   if (!isOpen) return
   const best = attached.value[0]
   if (best && (!form.name || form.name === prefilled.name)) {
     form.name = best.name
     prefilled.name = form.name
   }
-  if (providerEmail.value && (!form.email || form.email === prefilled.email)) {
-    form.email = providerEmail.value
-    prefilled.email = form.email
-  }
+  form.email = signedIn.value?.email || ''
 }, { immediate: true })
 
-// Detach one account, leaving the others. The draft is untouched — only what is
-// attached changes.
-const detaching = ref<string | null>(null)
-
-async function detach(identity: RequesterIdentity) {
-  const key = accountKey(identity)
-  detaching.value = key
-  try {
-    await $fetch('/api/verify/discard', { method: 'POST', body: { account: key } })
-  } catch {
-    // Even if the call fails, re-reading below tells us where we actually stand.
-  } finally {
-    await refreshProof()
-    detaching.value = null
-  }
-}
-
 async function submit() {
-  if (props.items.length === 0 || !verified.value) return
+  if (loading.value || props.items.length === 0 || !verified.value || !signedIn.value?.email) return
   loading.value = true
   try {
     const address = {
@@ -200,10 +229,8 @@ async function submit() {
       method: 'POST',
       body: {
         items: props.items,
-        message: form.message,
         name: form.name,
         email: form.email,
-        phone: form.phone,
         address
       }
     })
@@ -220,13 +247,15 @@ async function submit() {
     dropDraft()
     open.value = false
     emit('submitted')
+    await refreshNuxtData('orders')
+    await navigateTo('/orders')
   } catch (err) {
     const failure = err as { statusCode?: number, data?: { statusMessage?: string } }
     const message = failure?.data?.statusMessage || 'Something went wrong. Please try again.'
     toast.add({ title: 'Could not submit', description: message, icon: 'i-lucide-triangle-alert', color: 'error' })
     // A lapsed proof is the one failure the form can't explain on its own —
     // re-reading it swaps the form back for the challenge.
-    if (failure?.statusCode === 401) await refreshProof()
+    if (failure?.statusCode === 401) await Promise.all([refreshAccount(), refreshProof()])
   } finally {
     loading.value = false
   }
@@ -234,247 +263,228 @@ async function submit() {
 </script>
 
 <template>
-  <UModal
-    v-model:open="open"
-    :title="items.length > 1 ? 'Request these books' : 'Request a free copy'"
-    :description="`Tell us why you’d like ${summary}. The profiles you attach and your message appear on the Give a Book board so a sponsor can see who they're covering; your contact details and address stay private.`"
-    :ui="{ content: 'max-w-xl' }"
-  >
+  <div>
     <UButton
       :label="triggerLabel"
       :disabled="disabled || items.length === 0"
+      :loading="checkingAccount"
       icon="i-lucide-gift"
       color="neutral"
       variant="subtle"
       size="lg"
       block
+      @click="beginRequest"
     />
 
-    <template #body>
-      <form
-        class="space-y-4"
-        @submit.prevent="submit"
-      >
-        <!--
-          The public account comes first, because it is the part that decides
-          whether the request can be posted at all. The rest of the form stays
-          visible below it either way — a reader should be able to see what is
-          being asked before deciding to hand over an account.
-        -->
-        <USeparator label="Your public accounts" />
-
-        <p
-          v-if="attached.length"
-          class="text-xs text-dimmed"
-        >
-          {{ attachedCount }}
-        </p>
-
-        <!--
-          Every account attached, each saying what the board will say about it,
-          in the same words — so posting holds no surprise about how the request
-          will read to a sponsor. Strongest first, as the board draws them.
-        -->
-        <div
-          v-for="identity in attached"
-          :key="`${identity.provider}:${identity.subject}`"
-          class="flex flex-wrap items-center gap-3 rounded-lg bg-elevated/50 p-3"
-        >
-          <UAvatar
-            :src="identity.avatarUrl"
-            :alt="identity.name"
-            size="sm"
-          />
-          <!--
-            One verdict, because only one is reachable: everything in this list
-            was signed into. The three-way version here was the modal's half of
-            the promise that the board would describe a weaker account honestly,
-            and it went with the rungs it described. `RequesterBadge` keeps its
-            four states — the board still draws rows posted under the old ones.
-          -->
-          <div class="min-w-0 flex-1">
-            <p class="flex items-center gap-1.5 text-sm font-medium text-highlighted">
-              <span class="truncate">{{ identity.name }}</span>
-              <UIcon
-                name="i-lucide-badge-check"
-                class="size-4 shrink-0 text-primary"
-              />
-              <span class="truncate text-xs font-normal text-dimmed">
-                {{ identity.handle ? `@${identity.handle}` : providerLabel(identity.provider) }}
-              </span>
-            </p>
-            <p class="text-xs text-muted">
-              Verified, and shown on the board beside your message so sponsors know who
-              they're giving to.
-            </p>
-          </div>
-          <UButton
-            label="Remove"
-            icon="i-lucide-x"
-            color="neutral"
-            variant="ghost"
-            size="xs"
-            :loading="detaching === `${identity.provider}:${identity.subject}`"
-            @click="detach(identity)"
-          />
-        </div>
-
-        <!--
-          The picker stays put once something is attached, because attaching a
-          second profile is the ordinary case rather than a correction: the
-          account a reader's friends know them by and the one that can actually
-          be checked are rarely the same account.
-        -->
-        <IdentityChallenge
+    <UModal
+      v-model:open="loginOpen"
+      title="Sign in to request books"
+      description="First, verify your email address."
+      :ui="{ content: 'max-w-lg' }"
+    >
+      <template #body>
+        <EmailSignIn
           :redirect="challengeRedirect"
-          :adding="attached.length > 0"
+          @authenticated="refreshProof"
         />
+      </template>
+    </UModal>
 
-        <USeparator label="Why you'd like them" />
+    <UModal
+      v-model:open="accountOpen"
+      title="Attach a public account"
+      description="Let sponsors know who they’re giving to."
+      :ui="{ content: 'max-w-lg' }"
+    >
+      <template #body>
+        <IdentityChallenge :redirect="challengeRedirect" />
+      </template>
+      <template #footer>
+        <UButton
+          label="Cancel"
+          color="neutral"
+          variant="ghost"
+          @click="open = false"
+        />
+      </template>
+    </UModal>
 
-        <UFormField
-          label="Your request"
-          required
-          hint="shown publicly"
+    <UModal
+      v-model:open="requestOpen"
+      title="Delivery address"
+      description="Where should we send your books?"
+      :dismissible="!loading"
+      :close="!loading"
+      :ui="{ content: 'max-w-xl', footer: 'justify-end' }"
+    >
+      <template #body>
+        <form
+          :id="formId"
+          class="space-y-6"
+          @submit.prevent="submit"
         >
-          <UTextarea
-            v-model="form.message"
-            :rows="4"
-            class="w-full"
-            placeholder="Write your request here — a sentence or two about who you are and why a copy would help."
-            maxlength="1000"
-          />
-        </UFormField>
-
-        <USeparator label="Where to ship it (private)" />
-
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <UFormField
-            label="Full name"
-            required
-          >
-            <UInput
-              v-model="form.name"
-              class="w-full"
-              autocomplete="name"
-            />
-          </UFormField>
-          <UFormField
-            label="Email"
-            required
-          >
-            <UInput
-              v-model="form.email"
-              type="email"
-              class="w-full"
-              autocomplete="email"
-            />
-          </UFormField>
-          <UFormField
-            label="Phone"
-            required
-            hint="for the courier"
-          >
-            <UInput
-              v-model="form.phone"
-              type="tel"
-              class="w-full"
-              autocomplete="tel"
-            />
-          </UFormField>
-          <UFormField
-            label="Country"
-            required
-            hint="2-letter code"
-          >
-            <UInput
-              v-model="form.country"
-              class="w-full"
-              placeholder="US"
-              autocomplete="country"
-            />
-          </UFormField>
-        </div>
-
-        <UFormField
-          label="Address line 1"
-          required
-        >
-          <UInput
-            v-model="form.line1"
-            class="w-full"
-            autocomplete="address-line1"
-          />
-        </UFormField>
-        <UFormField label="Address line 2">
-          <UInput
-            v-model="form.line2"
-            class="w-full"
-            autocomplete="address-line2"
-          />
-        </UFormField>
-
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <UFormField
-            label="City"
-            required
-          >
-            <UInput
-              v-model="form.city"
-              class="w-full"
-              autocomplete="address-level2"
-            />
-          </UFormField>
-          <UFormField label="State / region">
-            <UInput
-              v-model="form.state"
-              class="w-full"
-              autocomplete="address-level1"
-            />
-          </UFormField>
-          <UFormField
-            label="Postal code"
-            required
-          >
-            <UInput
-              v-model="form.postalCode"
-              class="w-full"
-              autocomplete="postal-code"
-            />
-          </UFormField>
-        </div>
-
-        <div class="flex flex-wrap items-center justify-end gap-3 pt-2">
           <p
-            v-if="!verified"
-            class="mr-auto text-xs text-dimmed"
+            v-if="addressesLoading"
+            role="status"
+            class="flex items-center gap-2 text-sm text-muted"
           >
-            Attach at least one public profile above to post this request. Anything you've
-            typed is kept while you do.
+            <UIcon
+              name="i-lucide-loader-circle"
+              class="size-4 animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+            Loading your delivery addresses…
           </p>
-          <UButton
-            label="Cancel"
-            color="neutral"
-            variant="ghost"
-            @click="open = false"
-          />
-          <!--
-            Recedes until the account is verified. Nuxt UI's disabled state alone
-            is a slight dimming, which on a solid primary button still reads as
-            "press me" — and a bright button that does nothing is worse than an
-            obviously inactive one.
-          -->
-          <UButton
-            type="submit"
-            label="Submit request"
-            icon="i-lucide-send"
-            :color="verified ? 'primary' : 'neutral'"
-            :variant="verified ? 'solid' : 'subtle'"
-            :loading="loading"
-            :disabled="!verified"
-          />
-        </div>
-      </form>
-    </template>
-  </UModal>
+          <p
+            v-if="addressesError"
+            role="status"
+            class="text-sm text-muted"
+          >
+            {{ addressesError }}
+          </p>
+          <fieldset
+            v-if="deliveryAddresses.length"
+            class="space-y-3"
+          >
+            <legend class="mb-2 text-sm font-medium">
+              Use an address from an active order
+            </legend>
+            <label
+              v-for="saved in deliveryAddresses"
+              :key="saved.id"
+              class="flex cursor-pointer items-start gap-3 rounded-lg border border-default p-3 text-sm"
+            >
+              <input
+                type="radio"
+                :name="`${formId}-address`"
+                :value="saved.id"
+                :checked="selectedAddress === saved.id"
+                class="mt-1"
+                @change="chooseAddress(saved.id)"
+              >
+              <span>
+                <span class="block font-medium">{{ saved.name }}</span>
+                <span class="block">{{ [saved.address.line1, saved.address.line2].filter(Boolean).join(', ') }}</span>
+                <span class="block">{{ [saved.address.city, saved.address.state, saved.address.postalCode, saved.address.country].filter(Boolean).join(', ') }}</span>
+              </span>
+            </label>
+            <label class="flex cursor-pointer items-center gap-3 text-sm">
+              <input
+                type="radio"
+                :name="`${formId}-address`"
+                value=""
+                :checked="!selectedAddress"
+                @change="chooseAddress('')"
+              >
+              Enter a new address
+            </label>
+          </fieldset>
+
+          <section class="space-y-4">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <UFormField
+                label="Full name"
+                required
+              >
+                <UInput
+                  v-model="form.name"
+                  required
+                  class="w-full"
+                  autocomplete="name"
+                />
+              </UFormField>
+              <UFormField
+                label="Country"
+                required
+                hint="2-letter code"
+              >
+                <UInput
+                  v-model="form.country"
+                  required
+                  minlength="2"
+                  maxlength="2"
+                  pattern="[A-Za-z]{2}"
+                  class="w-full"
+                  placeholder="US"
+                  autocomplete="country"
+                />
+              </UFormField>
+            </div>
+
+            <UFormField
+              label="Street address"
+              required
+            >
+              <UInput
+                v-model="form.line1"
+                required
+                class="w-full"
+                autocomplete="address-line1"
+              />
+            </UFormField>
+            <UFormField
+              label="Apartment, suite, etc."
+              hint="optional"
+            >
+              <UInput
+                v-model="form.line2"
+                class="w-full"
+                autocomplete="address-line2"
+              />
+            </UFormField>
+
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <UFormField
+                label="City"
+                required
+              >
+                <UInput
+                  v-model="form.city"
+                  required
+                  class="w-full"
+                  autocomplete="address-level2"
+                />
+              </UFormField>
+              <UFormField
+                label="State"
+              >
+                <UInput
+                  v-model="form.state"
+                  class="w-full"
+                  autocomplete="address-level1"
+                />
+              </UFormField>
+              <UFormField
+                label="Postal code"
+                required
+              >
+                <UInput
+                  v-model="form.postalCode"
+                  required
+                  class="w-full"
+                  autocomplete="postal-code"
+                />
+              </UFormField>
+            </div>
+          </section>
+        </form>
+      </template>
+      <template #footer>
+        <UButton
+          label="Cancel"
+          color="neutral"
+          variant="ghost"
+          :disabled="loading"
+          @click="open = false"
+        />
+        <UButton
+          type="submit"
+          :form="formId"
+          label="Place request"
+          :loading="loading"
+          :disabled="!signedIn?.email || !verified || items.length === 0"
+        />
+      </template>
+    </UModal>
+  </div>
 </template>

@@ -10,6 +10,10 @@ import type { SignedIn } from '#shared/account'
 export function useSignedIn() {
   const signedIn = useState<SignedIn | null>('signed-in', () => null)
   const pending = useState('signed-in-pending', () => false)
+  // Whether `signedIn` has been asked yet, as distinct from asked and empty.
+  // False only in a prerendered page's HTML — there is no reader at build time
+  // — until the client asks; the header draws neither shape until then.
+  const known = useState('signed-in-known', () => false)
 
   // `useRequestFetch`, not bare `$fetch`. On the server a plain `$fetch` to our
   // own API sends no cookies — it is a fresh call, not a continuation of the
@@ -22,28 +26,31 @@ export function useSignedIn() {
   async function refresh() {
     const res = await request<{ signedIn: SignedIn | null }>('/api/auth/me')
     signedIn.value = res.signedIn
+    known.value = true
     return signedIn.value
   }
 
-  /** Ask for a code. Answers the same whether or not the address is known. */
-  async function requestCode(email: string) {
+  /** Ask for a sign-in link. Answers the same whether or not the address is known. */
+  async function requestLink(email: string, redirect: string) {
     pending.value = true
     try {
-      await $fetch('/api/auth/request-code', { method: 'POST', body: { email } })
+      await $fetch('/api/auth/request-link', { method: 'POST', body: { email, redirect } })
     } finally {
       pending.value = false
     }
   }
 
-  async function verifyCode(email: string, code: string) {
+  async function confirmLink(token: string) {
     pending.value = true
     try {
-      const res = await $fetch<{ signedIn: SignedIn }>('/api/auth/verify-code', {
+      const res = await $fetch<{ signedIn: SignedIn, redirect: string }>('/api/auth/confirm-link', {
         method: 'POST',
-        body: { email, code }
+        body: { token }
       })
       signedIn.value = res.signedIn
-      return res.signedIn
+      known.value = true
+      await refreshNuxtData('attached-accounts')
+      return res
     } finally {
       pending.value = false
     }
@@ -55,5 +62,5 @@ export function useSignedIn() {
     await refreshNuxtData('attached-accounts')
   }
 
-  return { signedIn, pending, refresh, requestCode, verifyCode, signOut }
+  return { signedIn, known, pending, refresh, requestLink, confirmLink, signOut }
 }

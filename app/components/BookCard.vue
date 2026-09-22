@@ -1,20 +1,7 @@
 <script setup lang="ts">
-import { type Book, formatPrice } from '#shared/catalog'
+import type { Book } from '#shared/catalog'
 
 defineProps<{ book: Book }>()
-
-const { add } = useCart()
-const toast = useToast()
-
-function addToCart(book: Book) {
-  add(book.slug)
-  toast.add({
-    title: 'Added to cart',
-    description: book.title,
-    icon: 'i-lucide-check',
-    color: 'primary'
-  })
-}
 </script>
 
 <template>
@@ -44,20 +31,6 @@ function addToCart(book: Book) {
         <p class="line-clamp-2 pt-1 text-sm text-toned">
           {{ book.tagline }}
         </p>
-      </div>
-
-      <div class="flex items-center justify-between gap-2">
-        <span class="font-display text-lg font-semibold text-highlighted">
-          {{ formatPrice(book.priceCents, book.currency) }}
-        </span>
-        <UButton
-          label="Add to cart"
-          icon="i-lucide-plus"
-          size="sm"
-          color="primary"
-          variant="soft"
-          @click="addToCart(book)"
-        />
       </div>
     </div>
   </div>

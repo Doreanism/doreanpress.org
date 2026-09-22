@@ -17,6 +17,7 @@ import {
 // Provider identities are durable account links. Authenticating any one of
 // them on a later browser recovers this same set.
 
+const { signedIn } = useSignedIn()
 const { identities, refresh } = useIdentityProof()
 
 // Coming back from a provider lands here, so pick up what was just attached.
@@ -57,14 +58,25 @@ async function detach(identity: RequesterIdentity) {
   <UContainer class="py-12 sm:py-16">
     <UPageHeader
       :ui="{ title: 'font-display' }"
-      title="Public accounts"
-      description="Asking for a free book means showing a public account, so a giver — a stranger paying out of their own pocket — can see who they are giving to. Attach one here, or when you post a request."
+      title="Emails & social profiles"
+      description="Manage the emails you use to sign in and receive updates, and the public profiles shown with your book requests."
     />
 
-    <div class="mt-10 flex max-w-2xl flex-col gap-8">
+    <div
+      v-if="!signedIn?.email"
+      class="mt-10 max-w-md"
+    >
+      <EmailSignIn @authenticated="refresh" />
+    </div>
+    <div
+      v-else
+      class="mt-10 flex max-w-2xl flex-col gap-8"
+    >
+      <AccountEmails />
+      <USeparator />
       <div class="flex flex-col gap-3">
         <h2 class="font-display text-lg font-semibold text-highlighted">
-          Attached accounts
+          Your profiles
         </h2>
 
         <div
@@ -113,14 +125,20 @@ async function detach(identity: RequesterIdentity) {
                 variant="ghost"
                 size="xs"
                 :loading="detaching === accountKey(identity)"
-                :disabled="detaching !== null"
+                :disabled="detaching !== null || identities.length <= 1"
                 :aria-label="`Remove ${identity.name} on ${providerLabel(identity.provider)}`"
-                title="Remove"
+                :title="identities.length <= 1 ? 'Add another public account before removing this one.' : 'Remove'"
                 @click="detach(identity)"
               />
             </div>
           </li>
         </ul>
+        <p
+          v-if="identities.length === 1"
+          class="mt-3 text-sm text-muted"
+        >
+          Add another public account before removing this one.
+        </p>
       </div>
 
       <div class="flex flex-col gap-3">
@@ -140,8 +158,8 @@ async function detach(identity: RequesterIdentity) {
       </div>
 
       <p class="text-sm text-muted">
-        These profiles are saved to your Dorean Press account. Signing in through
-        any attached provider restores the same account and its other profiles.
+        These profiles are saved to your Dorean Press account. Sign in with your
+        email address to manage them from any device.
       </p>
     </div>
   </UContainer>

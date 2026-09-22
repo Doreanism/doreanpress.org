@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { findBook, formatPrice } from '#shared/catalog'
+import { findBook } from '#shared/catalog'
 
 const route = useRoute()
 const slug = computed(() => String(route.params.slug))
@@ -8,21 +8,6 @@ const book = computed(() => findBook(slug.value))
 
 if (!book.value) {
   throw createError({ statusCode: 404, statusMessage: 'Book not found', fatal: true })
-}
-
-const { add } = useCart()
-const toast = useToast()
-const quantity = ref(1)
-
-function addToCart() {
-  if (!book.value) return
-  add(book.value.slug, quantity.value)
-  toast.add({
-    title: 'Added to cart',
-    description: `${quantity.value} × ${book.value.title}`,
-    icon: 'i-lucide-check',
-    color: 'primary'
-  })
 }
 
 useSeoMeta({
@@ -37,7 +22,7 @@ const details = computed(() => {
   return [
     { label: 'Author', value: b.author },
     { label: 'Format', value: b.format },
-    { label: 'Pages', value: String(b.lulu.pageCount) },
+    { label: 'Pages', value: String(b.pageCount) },
     { label: 'Dimensions', value: b.dimensions },
     { label: 'Weight', value: `${b.weightOz} ounces` },
     b.year ? { label: 'Published', value: String(b.year) } : null,
@@ -51,15 +36,6 @@ const details = computed(() => {
     v-if="book"
     class="py-12 sm:py-16"
   >
-    <UButton
-      to="/catalog"
-      label="Back to catalog"
-      icon="i-lucide-arrow-left"
-      color="neutral"
-      variant="link"
-      class="mb-8 -ml-2"
-    />
-
     <div class="grid gap-10 lg:grid-cols-[2fr_3fr] lg:gap-14">
       <!-- Cover + buy box -->
       <div class="space-y-6">
@@ -70,45 +46,20 @@ const details = computed(() => {
         >
 
         <div class="rounded-lg ring ring-default bg-default p-5">
-          <div class="flex items-baseline justify-between">
-            <span class="font-display text-3xl font-semibold text-highlighted">
-              {{ formatPrice(book.priceCents, book.currency) }}
-            </span>
-            <span class="text-sm text-muted">printed &amp; shipped at cost</span>
-          </div>
-
-          <div class="mt-5 flex items-center gap-3">
-            <UInputNumber
-              v-model="quantity"
-              :min="1"
-              :max="99"
-              class="w-28"
-            />
-            <UButton
-              label="Add to cart"
-              icon="i-lucide-shopping-cart"
-              color="primary"
-              size="lg"
-              block
-              class="flex-1"
-              @click="addToCart"
-            />
-          </div>
+          <UButton
+            v-if="book.webUrl"
+            :to="book.webUrl"
+            target="_blank"
+            label="Read online"
+            icon="i-lucide-book-open"
+            size="lg"
+            block
+          />
 
           <div
-            v-if="book.webUrl || book.pdfUrl || book.epubUrl || book.amazonUrl"
+            v-if="book.pdfUrl || book.epubUrl"
             class="mt-3 grid gap-3 sm:grid-cols-2"
           >
-            <UButton
-              v-if="book.webUrl"
-              :to="book.webUrl"
-              target="_blank"
-              label="Read online"
-              icon="i-lucide-book-open"
-              color="neutral"
-              variant="subtle"
-              block
-            />
             <UButton
               v-if="book.pdfUrl"
               :to="book.pdfUrl"
@@ -129,22 +80,31 @@ const details = computed(() => {
               variant="subtle"
               block
             />
+          </div>
+
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
             <UButton
               v-if="book.amazonUrl"
               :to="book.amazonUrl"
               target="_blank"
-              label="Amazon"
+              label="Buy on Amazon"
               icon="i-simple-icons-amazon"
               color="neutral"
               variant="subtle"
+              size="lg"
               block
             />
+            <RequestFreeModal
+              :items="[{ slug: book.slug, quantity: 1 }]"
+              :class="{ 'sm:col-span-2': !book.amazonUrl }"
+            />
           </div>
-
-          <p class="mt-4 text-xs text-muted">
-            Orders are printed on demand through Lulu and shipped directly to you. Please allow time for printing and delivery.
-          </p>
         </div>
+
+        <OutstandingRequests
+          :slug="book.slug"
+          compact
+        />
       </div>
 
       <!-- Details -->

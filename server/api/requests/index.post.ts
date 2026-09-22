@@ -23,6 +23,7 @@ export default defineEventHandler(async (event) => {
   // A free book goes to a person, so a request has to come from one. The
   // challenge is what puts a name and a face on the board for the sponsor to
   // look at, and what makes the limit below mean anything.
+  const account = await requireEmailAccount(event, 'asking for a book')
   const requesters = await requireIdentities(event, 'asking for a book')
 
   // What these accounts already have waiting. The limit is one open
@@ -55,7 +56,7 @@ export default defineEventHandler(async (event) => {
 
   const message = str(body?.message, 1000)
   const name = str(body?.name, 120)
-  const email = str(body?.email, 200)
+  const email = account.email
   const phone = str(body?.phone, 40)
   const a = body?.address || {}
   const address = {
@@ -68,10 +69,9 @@ export default defineEventHandler(async (event) => {
   }
 
   const missing: string[] = []
-  if (message.length < 5) missing.push('message')
+  if (message && message.length < 5) missing.push('message')
   if (!name) missing.push('name')
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) missing.push('email')
-  if (!phone) missing.push('phone')
   if (!address.line1) missing.push('address.line1')
   if (!address.city) missing.push('address.city')
   if (!address.postalCode) missing.push('address.postalCode')
@@ -119,6 +119,7 @@ export default defineEventHandler(async (event) => {
     ? await updateRequest(already.id, foldOrders(already, { items, message }))
     : await createRequest({
         items,
+        accountId: account.accountId,
         message,
         // Snapshotted, not looked up later: the board should show the accounts
         // as they were when the reader stood behind the request, even if they
@@ -159,5 +160,5 @@ export default defineEventHandler(async (event) => {
     await sendEmail(pressNewRequestEmail({ to: press, name, titles, message, requesters }))
   }
 
-  return { id: record.id, status: record.status }
+  return { id: record.id, status: record.status, message: record.message }
 })

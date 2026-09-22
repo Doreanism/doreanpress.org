@@ -1,6 +1,6 @@
 # Local-only Postgres + a Neon-compatible HTTP proxy.
 #
-# The app talks to the database through `@netlify/neon`, whose `neon()` is the
+# The app talks to the database through `@neondatabase/serverless`, whose `neon()` is the
 # Neon *serverless HTTP driver* — it POSTs SQL to a Neon endpoint over HTTP(S)
 # rather than speaking the raw Postgres wire protocol. So a plain local Postgres
 # isn't reachable by it directly; this proxy sits in front and speaks that HTTP

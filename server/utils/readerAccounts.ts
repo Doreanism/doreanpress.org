@@ -27,6 +27,16 @@ function ensureSchema() {
         )
       `
       await sql`
+        CREATE TABLE IF NOT EXISTS reader_emails (
+          email text PRIMARY KEY,
+          account_id text NOT NULL REFERENCES reader_accounts(id) ON DELETE CASCADE,
+          verified_at timestamptz NOT NULL DEFAULT now()
+        )
+      `
+      await sql`CREATE INDEX IF NOT EXISTS reader_emails_account_idx ON reader_emails(account_id)`
+      await sql`INSERT INTO reader_emails(email, account_id)
+        SELECT email, id FROM reader_accounts WHERE email IS NOT NULL ON CONFLICT DO NOTHING`
+      await sql`
         CREATE TABLE IF NOT EXISTS reader_identities (
           account_id      text NOT NULL REFERENCES reader_accounts(id) ON DELETE CASCADE,
           provider        text NOT NULL,
@@ -79,34 +89,16 @@ function labelFor(identity: RequesterIdentity, email?: string | null) {
   return email || (identity.handle ? `@${identity.handle}` : identity.name)
 }
 
-async function createAccount(id: string) {
-  const now = new Date().toISOString()
-  await db()`
-    INSERT INTO reader_accounts (id, created_at, updated_at)
-    VALUES (${id}, ${now}, ${now})
-    ON CONFLICT (id) DO NOTHING
-  `
-}
-
 async function mergeAccounts(target: string, source: string) {
   if (target === source) return
   const sql = db()
-  const sourceRows = await sql`SELECT email FROM reader_accounts WHERE id = ${source}` as AccountRow[]
-
-  // `provider + subject` is globally unique, so two accounts being merged
-  // cannot contain the same social identity. Different identities from the
-  // same provider are intentionally kept.
-  await sql`UPDATE reader_identities SET account_id = ${target} WHERE account_id = ${source}`
-  await sql`DELETE FROM reader_accounts WHERE id = ${source}`
-
-  const sourceEmail = sourceRows[0]?.email
-  if (sourceEmail) {
-    await sql`
-      UPDATE reader_accounts
-         SET email = COALESCE(email, ${sourceEmail}), updated_at = ${new Date().toISOString()}
-       WHERE id = ${target}
-    `
-  }
+  // Only legacy provider-only sessions are migrated. Move the links and remove
+  // the empty account together so a failed write cannot strand the reader.
+  await sql.transaction([
+    sql`SELECT id FROM reader_accounts WHERE id = ${source} FOR UPDATE`,
+    sql`UPDATE reader_identities SET account_id = ${target} WHERE account_id = ${source}`,
+    sql`DELETE FROM reader_accounts WHERE id = ${source}`
+  ])
 }
 
 async function accountRow(id: string): Promise<AccountRow | null> {
@@ -119,7 +111,7 @@ export async function sessionAccountId(event: H3Event): Promise<string | null> {
   return session.accountId || session.signedIn?.accountId || null
 }
 
-/** Persist a provider identity and return the durable account it authenticates. */
+/** Link a provider identity to the email-authenticated account, never log in through it. */
 export async function attachIdentity(
   event: H3Event,
   identity: RequesterIdentity,
@@ -127,20 +119,22 @@ export async function attachIdentity(
 ): Promise<SignedIn> {
   await ensureSchema()
   const sql = db()
-  const current = await sessionAccountId(event)
+  const signedIn = await requireEmailAccount(event, 'attaching a social profile')
+  const accountId = signedIn.accountId
+  const account = await accountRow(accountId)
+  if (!account?.email || account.email !== signedIn.email) {
+    throw createError({ statusCode: 401, statusMessage: 'Please sign in with your email again.' })
+  }
   const linked = await sql`
     SELECT account_id FROM reader_identities
      WHERE provider = ${identity.provider} AND subject = ${identity.subject}
   ` as { account_id: string }[]
-
-  // An existing provider identity is a login. Any identities accumulated in
-  // this browser are merged because the reader has now authenticated both sets.
-  const accountId = linked[0]?.account_id || current || crypto.randomUUID()
-  await createAccount(accountId)
-  if (current && current !== accountId) await mergeAccounts(accountId, current)
+  if (linked[0] && linked[0].account_id !== accountId) {
+    throw createError({ statusCode: 409, statusMessage: 'This social profile is already linked to another account.' })
+  }
 
   const now = new Date().toISOString()
-  await sql`
+  const attached = await sql`
     INSERT INTO reader_identities
       (account_id, provider, subject, identity, provider_email, attached_at, last_verified_at)
     VALUES
@@ -150,9 +144,13 @@ export async function attachIdentity(
       identity = EXCLUDED.identity,
       provider_email = COALESCE(EXCLUDED.provider_email, reader_identities.provider_email),
       last_verified_at = EXCLUDED.last_verified_at
+    WHERE reader_identities.account_id = EXCLUDED.account_id
+    RETURNING account_id
   `
+  if (!attached.length) {
+    throw createError({ statusCode: 409, statusMessage: 'This social profile is already linked to another account.' })
+  }
 
-  const account = await accountRow(accountId)
   return {
     accountId,
     email: account?.email || undefined,
@@ -166,16 +164,25 @@ export async function attachEmail(event: H3Event, email: string): Promise<Signed
   await ensureSchema()
   const address = normalizeEmail(email)
   const current = await sessionAccountId(event)
-  const rows = await db()`SELECT id, email FROM reader_accounts WHERE email = ${address}` as AccountRow[]
-  const accountId = rows[0]?.id || current || crypto.randomUUID()
-  await createAccount(accountId)
-  if (current && current !== accountId) await mergeAccounts(accountId, current)
-  await db()`
-    UPDATE reader_accounts
-       SET email = ${address}, updated_at = ${new Date().toISOString()}
-     WHERE id = ${accountId}
-  `
-  return { accountId, email: address, label: address, at: new Date().toISOString() }
+  const existing = current ? await accountRow(current) : null
+  const now = new Date().toISOString()
+  const sql = db()
+  const results = await sql.transaction([
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${address}, 0))`,
+    sql`INSERT INTO reader_accounts(id, email, created_at, updated_at)
+      SELECT ${crypto.randomUUID()}, ${address}, ${now}, ${now}
+      WHERE NOT EXISTS (SELECT 1 FROM reader_emails WHERE email = ${address})
+      ON CONFLICT (email) DO NOTHING`,
+    sql`INSERT INTO reader_emails(email, account_id)
+      SELECT email, id FROM reader_accounts WHERE email = ${address} ON CONFLICT DO NOTHING`,
+    sql`SELECT a.id, a.email FROM reader_accounts a JOIN reader_emails e ON e.account_id = a.id WHERE e.email = ${address}`
+  ])
+  const account = results[3]![0] as unknown as AccountRow
+  const accountId = account.id
+  // Migrate a legacy provider-only account, but never merge two email accounts
+  // just because someone signs into a different inbox in this browser.
+  if (existing && !existing.email && current !== accountId) await mergeAccounts(accountId, existing.id)
+  return { accountId, email: account.email!, label: account.email!, at: new Date().toISOString() }
 }
 
 export async function listAttachedIdentities(event: H3Event): Promise<{
@@ -202,16 +209,84 @@ export async function detachIdentity(event: H3Event, key?: string): Promise<void
   await ensureSchema()
   const accountId = await sessionAccountId(event)
   if (!accountId) return
-  if (!key) {
-    await db()`DELETE FROM reader_identities WHERE account_id = ${accountId}`
-    return
-  }
+  const lastIdentity = () => createError({ statusCode: 409, statusMessage: 'LAST_IDENTITY', data: { code: 'LAST_IDENTITY' },
+    message: 'Add another public account before removing this one.' })
+  if (!key) throw lastIdentity()
   const split = key.indexOf(':')
   if (split < 1) return
   const provider = key.slice(0, split)
   const subject = key.slice(split + 1)
-  await db()`
-    DELETE FROM reader_identities
-     WHERE account_id = ${accountId} AND provider = ${provider} AND subject = ${subject}
-  `
+  const sql = db()
+  // Lock the parent first. Each subsequent statement gets a fresh READ COMMITTED
+  // snapshot, including a concurrent detach that finished while we waited.
+  const results = await sql.transaction([
+    sql`SELECT id FROM reader_accounts WHERE id = ${accountId} FOR UPDATE`,
+    sql`DELETE FROM reader_identities WHERE account_id = ${accountId}
+      AND provider = ${provider} AND subject = ${subject}
+      AND (SELECT count(*) FROM reader_identities WHERE account_id = ${accountId}) > 1
+      RETURNING subject`,
+    sql`SELECT subject FROM reader_identities WHERE account_id = ${accountId}
+      AND provider = ${provider} AND subject = ${subject}`
+  ])
+  if (results[2]!.length) throw lastIdentity()
+}
+
+/** Always resolve the primary address from the database, including older sessions. */
+export async function readAccount(id: string): Promise<AccountRow | null> {
+  await ensureSchema()
+  return accountRow(id)
+}
+
+export async function accountEmails(accountId: string): Promise<{ email: string, primary: boolean }[]> {
+  await ensureSchema()
+  const rows = await db()`SELECT e.email, (e.email = a.email) AS primary
+    FROM reader_emails e JOIN reader_accounts a ON a.id = e.account_id
+    WHERE a.id = ${accountId} ORDER BY (e.email = a.email) DESC, e.verified_at, e.email`
+  return rows as { email: string, primary: boolean }[]
+}
+
+/** Called only after consuming a verification token bound to this account. */
+export async function addVerifiedEmail(accountId: string, email: string): Promise<void> {
+  await ensureSchema()
+  const address = normalizeEmail(email)
+  const sql = db()
+  const results = await sql.transaction([
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${address}, 0))`,
+    sql`INSERT INTO reader_emails(email, account_id) VALUES (${address}, ${accountId})
+      ON CONFLICT (email) DO UPDATE SET verified_at = now()
+      WHERE reader_emails.account_id = EXCLUDED.account_id RETURNING email`
+  ])
+  if (!results[1]!.length) throw createError({ statusCode: 409, statusMessage: 'That email belongs to another account. Sign in with that email to manage it.' })
+}
+
+export async function setPrimaryEmail(accountId: string, email: string): Promise<void> {
+  await ensureSchema()
+  const sql = db()
+  const results = await sql.transaction([
+    sql`SELECT id FROM reader_accounts WHERE id = ${accountId} FOR UPDATE`,
+    sql`UPDATE reader_accounts SET email = ${normalizeEmail(email)}, updated_at = ${new Date().toISOString()}
+      WHERE id = ${accountId} AND EXISTS (SELECT 1 FROM reader_emails WHERE account_id = ${accountId} AND email = ${normalizeEmail(email)}) RETURNING id`
+  ])
+  if (!results[1]!.length) throw createError({ statusCode: 422, statusMessage: 'Verify that email before making it primary.' })
+}
+
+export async function removeAccountEmail(accountId: string, email: string): Promise<void> {
+  await ensureSchema()
+  const sql = db()
+  // Keep the primary until the reader explicitly chooses another. This also
+  // protects the last email under concurrent removals and primary changes.
+  const results = await sql.transaction([
+    sql`SELECT id FROM reader_accounts WHERE id = ${accountId} FOR UPDATE`,
+    sql`DELETE FROM reader_emails WHERE account_id = ${accountId} AND email = ${normalizeEmail(email)}
+      AND email <> (SELECT email FROM reader_accounts WHERE id = ${accountId}) RETURNING email`
+  ])
+  if (!results[1]!.length) throw createError({ statusCode: 409, statusMessage: 'Choose another verified email as primary before removing this one. Your account must keep at least one email.' })
+}
+
+/** Resolve notification delivery at send time so queued shipping notices follow primary changes. */
+export async function primaryNotificationEmail(email: string, accountId?: string): Promise<string> {
+  await ensureSchema()
+  if (accountId) return (await accountRow(accountId))?.email || email
+  const rows = await db()`SELECT a.email FROM reader_accounts a JOIN reader_emails e ON e.account_id = a.id WHERE e.email = ${normalizeEmail(email)}`
+  return String(rows[0]?.email || email)
 }

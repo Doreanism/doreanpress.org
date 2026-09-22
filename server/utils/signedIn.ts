@@ -1,13 +1,11 @@
-// The durable reader account in this browser. It may be recovered through any
-// attached provider identity or linked to an inbox through a mailed code.
+// The durable reader account in this browser, authenticated by an emailed sign-in link.
 
 import type { H3Event } from 'h3'
 import type { SignedIn } from '#shared/account'
-import { attachEmail } from './readerAccounts'
+import { attachEmail, readAccount } from './readerAccounts'
 
 /**
- * Link an authenticated inbox to the current account, merging it with an
- * existing account for that address when necessary.
+ * Recover the account for a verified inbox, or create it on first sign-in.
  */
 export async function signIn(event: H3Event, email: string): Promise<SignedIn> {
   const signedIn = await attachEmail(event, email)
@@ -19,7 +17,10 @@ export async function signIn(event: H3Event, email: string): Promise<SignedIn> {
 export async function readSignedIn(event: H3Event): Promise<SignedIn | null> {
   const session = await getUserSession(event)
   const signedIn = session.signedIn as SignedIn | undefined
-  return signedIn?.accountId ? signedIn : null
+  if (!signedIn?.accountId) return null
+  const account = await readAccount(signedIn.accountId)
+  if (!account) return null
+  return { ...signedIn, email: account.email || undefined, label: account.email || signedIn.label }
 }
 
 /** The signed-in address, or a 401 the client turns into a sign-in prompt. */
@@ -35,9 +36,18 @@ export async function requireSignedIn(event: H3Event, action: string): Promise<S
 }
 
 /**
- * End this browser session. Durable identities remain available as sign-in
- * methods in the database.
+ * End this browser session. Durable profile links remain attached to the account
+ * for the next email sign-in.
  */
 export async function signOut(event: H3Event): Promise<void> {
   await clearUserSession(event)
+}
+
+/** Email verification is required before linking profiles or requesting books. */
+export async function requireEmailAccount(event: H3Event, action: string): Promise<SignedIn & { email: string }> {
+  const signedIn = await requireSignedIn(event, action)
+  if (!signedIn.email) {
+    throw createError({ statusCode: 401, statusMessage: `Please sign in with your email before ${action}.` })
+  }
+  return signedIn as SignedIn & { email: string }
 }

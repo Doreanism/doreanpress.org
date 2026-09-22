@@ -15,17 +15,9 @@ export default defineNuxtConfig({
   // Server-only secrets + public config. Override in production with
   // NUXT_*-prefixed environment variables (see .env.example).
   runtimeConfig: {
-    stripeSecretKey: '',
-    stripeWebhookSecret: '',
-    lulu: {
-      clientKey: '',
-      clientSecret: '',
-      baseUrl: 'https://api.sandbox.lulu.com',
-      contactEmail: '',
-      // When true (or when credentials are missing) the Lulu client returns
-      // mocked responses so the site works without real keys.
-      mock: 'true'
-    },
+    zeffy: { campaignUrl: '', campaignId: '', webhookSecret: '', apiKey: '', recommendationQuestion: 'Dorean Press recommendation code' },
+    easypost: { apiKey: '', webhookSecret: '' },
+    maintenanceSecret: '',
     // Transactional email (Brevo). When the key is missing, emails are logged
     // to the console instead of sent (mock mode).
     brevoApiKey: '',
@@ -35,7 +27,7 @@ export default defineNuxtConfig({
     // When true, Brevo requests carry `X-Sib-Sandbox: drop` — validated in full
     // by Brevo, then discarded. Lets a real key be exercised without delivering.
     brevoSandbox: 'false',
-    fromEmail: 'Dorean Press <hello@doreanpress.org>',
+    fromEmail: 'Dorean Press <info@doreanpress.org>',
     // Optional: notify the press when a new request is posted.
     pressEmail: '',
     // The sealed cookie. It carries two things with very different lifetimes:
@@ -87,8 +79,7 @@ export default defineNuxtConfig({
       }
     },
     public: {
-      siteUrl: 'http://localhost:3000',
-      stripePublishableKey: ''
+      siteUrl: 'http://localhost:3000'
     }
   },
 
@@ -108,8 +99,8 @@ export default defineNuxtConfig({
   // every restart, so pinning the exact one would mean editing this file each
   // time. Dev-server only; `nuxt build` never reads it.
   //
-  // Here to receive Lulu print-job webhooks against a local server. Delete it
-  // once the callbacks are exercised somewhere with a real hostname.
+  // Here to receive Zeffy and EasyPost webhooks against a local server. Delete
+  // it once the callbacks are exercised somewhere with a real hostname.
   vite: {
     server: {
       allowedHosts: ['.trycloudflare.com']

@@ -1,85 +1,31 @@
-import type Stripe from 'stripe'
-import {
-  findBook,
-  formatPrice,
-  itemsSubtotalCents,
-  limitItems,
-  SPONSOR_SHIPPING_CENTS,
-  type RequestItem
-} from '#shared/catalog'
+import { limitItems, type RequestItem } from '#shared/catalog'
 
-// A sponsor covers a request in full, or picks out part of it — a few titles, or
-// fewer copies than were asked for. Whatever they fund prints and ships as its
-// own parcel (hence one shipping charge per sponsorship); anything left over
-// stays on the board for the next giver. Sending no selection funds everything.
 export default defineEventHandler(async (event) => {
+  const config = useRuntimeConfig().zeffy
+  if (!config.campaignUrl || !config.campaignId || !config.webhookSecret) {
+    throw createError({ statusCode: 503, statusMessage: 'Donations are not yet available. Please check back soon.' })
+  }
+  const url = new URL(config.campaignUrl)
+  if (url.protocol !== 'https:' || !['www.zeffy.com', 'zeffy.com'].includes(url.hostname)) throw createError({ statusCode: 503, statusMessage: 'Donation campaign is not configured correctly.' })
   const id = getRouterParam(event, 'id') || ''
+  await ensureMinistrySchema()
   const request = await getRequest(id)
-
-  if (!request || request.status !== 'open') {
-    throw createError({ statusCode: 404, statusMessage: 'This request is no longer available.' })
-  }
-
-  const body = await readBody<{ items?: RequestItem[] }>(event).catch(() => ({} as { items?: RequestItem[] }))
-  const chosen = Array.isArray(body?.items) && body.items.length > 0
-    ? limitItems(request.items, body.items)
-    : request.items
-
-  if (chosen.length === 0) {
-    throw createError({ statusCode: 400, statusMessage: 'Choose at least one book to sponsor.' })
-  }
-
-  const config = useRuntimeConfig()
-  const siteUrl = config.public.siteUrl.replace(/\/$/, '')
-
-  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = []
-  for (const item of chosen) {
-    const book = findBook(item.slug)
-    if (!book) continue
-    lineItems.push({
-      quantity: item.quantity,
-      price_data: {
-        currency: book.currency,
-        unit_amount: book.priceCents,
-        product_data: {
-          name: `Sponsor: ${book.title}`,
-          description: `Printed & shipped to a reader who requested it (${formatPrice(book.priceCents, book.currency)} per copy).`,
-          images: siteUrl.startsWith('https') ? [`${siteUrl}${book.cover}`] : undefined,
-          metadata: { slug: book.slug }
-        }
-      }
-    })
-  }
-
-  if (lineItems.length === 0) {
-    throw createError({ statusCode: 400, statusMessage: 'This request has no books we can print.' })
-  }
-
-  lineItems.push({
-    quantity: 1,
-    price_data: {
-      currency: 'usd',
-      unit_amount: SPONSOR_SHIPPING_CENTS,
-      product_data: { name: 'Shipping', description: 'One parcel for the books you sponsor.' }
-    }
-  })
-
-  const stripe = useStripe()
-
-  const session = await stripe.checkout.sessions.create({
-    mode: 'payment',
-    line_items: lineItems,
-    // No address collection — the order ships to the requester's stored address.
-    metadata: {
-      requestId: request.id,
-      // Exactly what this sponsor funded. The webhook prints from this, not from
-      // the request, so a partial gift only ever ships the part it paid for.
-      items: JSON.stringify(chosen),
-      subtotalCents: String(itemsSubtotalCents(chosen))
-    },
-    success_url: `${siteUrl}/give?sponsored=1`,
-    cancel_url: `${siteUrl}/give`
-  })
-
-  return { id: session.id, url: session.url }
+  if (!request || request.hidden || request.status !== 'open') throw createError({ statusCode: 404, statusMessage: 'Request unavailable.' })
+  const body = await readBody<{ items?: RequestItem[] }>(event)
+  const chosen = Array.isArray(body?.items) ? limitItems(request.items, body.items) : request.items
+  if (!chosen.length) throw createError({ statusCode: 422, statusMessage: 'Choose at least one book.' })
+  const sql = db()
+  const reservationId = crypto.randomUUID()
+  const results = await sql.transaction([
+    sql`SELECT id FROM book_requests WHERE id = ${id} FOR UPDATE`,
+    sql`INSERT INTO gift_reservations(id, request_id, items, original_items, expires_at)
+      SELECT ${reservationId}, id, ${JSON.stringify(chosen)}::jsonb, items, now() + interval '30 minutes' FROM book_requests
+      WHERE id = ${id} AND status = 'open' AND NOT hidden AND items = ${JSON.stringify(request.items)}::jsonb
+        AND NOT EXISTS(SELECT 1 FROM gift_reservations WHERE request_id = ${id} AND expires_at > now())
+      RETURNING id`
+  ])
+  if (!results[1]!.length) throw createError({ statusCode: 409, statusMessage: 'This request is unavailable or another donor is considering it. Please choose another request or try later.' })
+  // Zeffy's metadata is reserved for future use. A configured checkout question
+  // transports the recommendation explicitly; do not invent URL metadata support.
+  return { id: reservationId, url: url.href, recommendation: reservationId, question: config.recommendationQuestion }
 })

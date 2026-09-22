@@ -3,10 +3,11 @@
 // The id is an unguessable UUID, shared only with the requester (and the public
 // fields are already visible on the board), so no further auth is needed.
 export default defineEventHandler(async (event) => {
+  setResponseHeader(event, 'Cache-Control', 'no-store')
   const id = getRouterParam(event, 'id') || ''
   const request = await getRequest(id)
 
-  if (!request || request.status !== 'open') {
+  if (!request || request.hidden || request.status !== 'open') {
     throw createError({ statusCode: 404, statusMessage: 'This request is no longer available.' })
   }
 

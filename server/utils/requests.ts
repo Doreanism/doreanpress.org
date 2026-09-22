@@ -2,7 +2,7 @@
 //
 // A reader who cannot pay submits a request — an *order* of one or more titles,
 // with a public message and private shipping details. A visitor sponsors it,
-// either in full or in part; once paid + sent to Lulu the sponsored books are
+// either in full or in part; once paid for the sponsored books are
 // marked fulfilled and drop off the public board, while anything still unfunded
 // stays there for the next giver (see `fulfilItems`).
 //
@@ -11,7 +11,28 @@
 import { mergeItems, subtractItems, type RequestItem } from '#shared/catalog'
 import { accountKey, primaryIdentity, type RequesterIdentity } from '#shared/identity'
 
-export type RequestStatus = 'open' | 'fulfilled'
+export type RequestStatus = 'open' | 'fulfilled' | 'funded_awaiting_order' | 'ordered' | 'done' | 'cancelled' | 'needs_attention'
+
+export interface FulfillmentDetails {
+  claimedBy?: string
+  claimedAt?: string
+  fundedAt?: string
+  amazonOrderNumber?: string
+  actualCents?: number
+  maximumCents?: number
+  estimatedDate?: string
+  marketplace?: string
+  paymentMethod?: string
+  trackingUrl?: string
+  recipientTrackingUrl?: string
+  trackingSubmittedBy?: string
+  trackingSubmittedAt?: string
+  carrier?: string
+  trackingNumber?: string
+  trackerId?: string
+  deliveryStatus?: string
+  deliveryUpdatedAt?: string
+}
 
 export interface RequestAddress {
   line1: string
@@ -24,6 +45,8 @@ export interface RequestAddress {
 
 export interface BookRequest {
   id: string
+  accountId?: string
+  sponsorAccountId?: string
   /**
    * The books this record covers. On an open request, what the reader is still
    * waiting for; on a fulfilled one, what a single sponsor paid for. Never empty.
@@ -47,12 +70,11 @@ export interface BookRequest {
   phone: string
   address: RequestAddress
   // ── lifecycle ──
+  hidden?: boolean
+  fulfillment?: FulfillmentDetails
   status: RequestStatus
   createdAt: string
   sponsorEmail?: string
-  stripeSessionId?: string
-  luluJobId?: string | number
-  shippingStatus?: string
   fulfilledAt?: string
 }
 
@@ -158,6 +180,7 @@ export function foldOrders(
 }
 
 export interface CreateRequestInput {
+  accountId?: string
   items: RequestItem[]
   message: string
   requesters: RequesterIdentity[]
@@ -177,7 +200,7 @@ export interface CreateRequestInput {
 // the process, long after it came back. Clearing the slot on failure means the
 // next caller simply tries again.
 let schema: Promise<void> | null = null
-function ensureSchema() {
+export function ensureRequestsSchema() {
   if (!schema) {
     schema = (async () => {
       const sql = db()
@@ -195,12 +218,14 @@ function ensureSchema() {
           status            text NOT NULL DEFAULT 'open',
           created_at        text NOT NULL,
           sponsor_email     text,
-          stripe_session_id text,
-          lulu_job_id       text,
-          shipping_status   text,
           fulfilled_at      text
         )
       `
+
+      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS account_id text`
+      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS sponsor_account_id text`
+      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS hidden boolean NOT NULL DEFAULT false`
+      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS fulfillment jsonb NOT NULL DEFAULT '{}'::jsonb`
 
       // Migration off the one-book-per-request schema. Tables created before
       // requests became orders have `book_slug` instead of `items`; fold each
@@ -241,35 +266,6 @@ function ensureSchema() {
         CREATE INDEX IF NOT EXISTS book_requests_account_open_idx
           ON book_requests (account_key, status)
       `
-
-      // One open order per doorstep, applied to what is already there. Under the
-      // old rule a reader's second request became a second row, and the board
-      // drew them as two cards for one person waiting on one parcel. Those rows
-      // are folded into the earliest of them — the id a confirmation email and
-      // any in-flight checkout already point at — rather than left for the board
-      // to paper over.
-      const open = await sql`
-        SELECT * FROM book_requests
-         WHERE status = 'open' AND account_key IS NOT NULL
-         ORDER BY created_at ASC
-      `
-      const byDoorstep = new Map<string, BookRequest[]>()
-      for (const row of open) {
-        const request = fromRow(row)
-        const key = orderKey(request)
-        if (!key) continue
-        byDoorstep.set(key, [...(byDoorstep.get(key) ?? []), request])
-      }
-      for (const [first, ...rest] of byDoorstep.values()) {
-        if (!first || rest.length === 0) continue
-        const folded = rest.reduce<Pick<BookRequest, 'items' | 'message'>>(foldOrders, first)
-        await sql`
-          UPDATE book_requests
-             SET items = ${JSON.stringify(folded.items)}::jsonb, message = ${folded.message}
-           WHERE id = ${first.id}
-        `
-        for (const spent of rest) await sql`DELETE FROM book_requests WHERE id = ${spent.id}`
-      }
     })().catch((err) => {
       schema = null
       throw err
@@ -321,6 +317,8 @@ function requestersFrom(r: Record<string, unknown>): RequesterIdentity[] {
 function fromRow(r: Record<string, unknown>): BookRequest {
   return {
     id: r.id as string,
+    accountId: (r.account_id as string) || undefined,
+    sponsorAccountId: (r.sponsor_account_id as string) || undefined,
     items: (r.items as RequestItem[]) ?? [],
     message: r.message as string,
     requesters: requestersFrom(r),
@@ -328,26 +326,25 @@ function fromRow(r: Record<string, unknown>): BookRequest {
     email: r.email as string,
     phone: r.phone as string,
     address: r.address as RequestAddress,
+    hidden: r.hidden === true,
+    fulfillment: (r.fulfillment as FulfillmentDetails) ?? {},
     status: r.status as RequestStatus,
     createdAt: r.created_at as string,
     sponsorEmail: (r.sponsor_email as string) ?? undefined,
-    stripeSessionId: (r.stripe_session_id as string) ?? undefined,
-    luluJobId: (r.lulu_job_id as string) ?? undefined,
-    shippingStatus: (r.shipping_status as string) ?? undefined,
     fulfilledAt: (r.fulfilled_at as string) ?? undefined
   }
 }
 
 // Full-row upsert, so create and update share one write path.
 async function upsert(r: BookRequest) {
-  await ensureSchema()
+  await ensureRequestsSchema()
   // The primary is written to `requester` as well as the set, so the indexed key
   // and the single-account shape stay in step with each other.
   const primary = primaryIdentity(r.requesters)
   await db()`
     INSERT INTO book_requests
       (id, items, message, requester, requesters, account_key, name, email, phone, address, status, created_at,
-       sponsor_email, stripe_session_id, lulu_job_id, shipping_status, fulfilled_at)
+       sponsor_email, fulfilled_at, hidden, account_id, sponsor_account_id)
     VALUES
       (${r.id}, ${JSON.stringify(r.items)}::jsonb, ${r.message},
        ${primary ? JSON.stringify(primary) : null}::jsonb,
@@ -355,9 +352,7 @@ async function upsert(r: BookRequest) {
        ${primary ? accountKey(primary) : null},
        ${r.name}, ${r.email}, ${r.phone},
        ${JSON.stringify(r.address)}::jsonb, ${r.status}, ${r.createdAt},
-       ${r.sponsorEmail ?? null}, ${r.stripeSessionId ?? null},
-       ${r.luluJobId != null ? String(r.luluJobId) : null},
-       ${r.shippingStatus ?? null}, ${r.fulfilledAt ?? null})
+       ${r.sponsorEmail ?? null}, ${r.fulfilledAt ?? null}, ${r.hidden ?? false}, ${r.accountId || null}, ${r.sponsorAccountId || null})
     ON CONFLICT (id) DO UPDATE SET
       items = EXCLUDED.items,
       message = EXCLUDED.message,
@@ -371,10 +366,8 @@ async function upsert(r: BookRequest) {
       status = EXCLUDED.status,
       created_at = EXCLUDED.created_at,
       sponsor_email = EXCLUDED.sponsor_email,
-      stripe_session_id = EXCLUDED.stripe_session_id,
-      lulu_job_id = EXCLUDED.lulu_job_id,
-      shipping_status = EXCLUDED.shipping_status,
       fulfilled_at = EXCLUDED.fulfilled_at
+    WHERE book_requests.status = 'open' OR book_requests.status = EXCLUDED.status
   `
 }
 
@@ -390,7 +383,7 @@ export async function createRequest(input: CreateRequestInput): Promise<BookRequ
 }
 
 export async function getRequest(id: string): Promise<BookRequest | null> {
-  await ensureSchema()
+  await ensureRequestsSchema()
   const rows = await db()`SELECT * FROM book_requests WHERE id = ${id}`
   return rows[0] ? fromRow(rows[0]) : null
 }
@@ -404,7 +397,7 @@ export async function getRequest(id: string): Promise<BookRequest | null> {
  * orders from them over a capital letter.
  */
 export async function listRequestsForEmail(email: string): Promise<BookRequest[]> {
-  await ensureSchema()
+  await ensureRequestsSchema()
   const rows = await db()`
     SELECT * FROM book_requests WHERE lower(email) = ${normalizeEmail(email)}
     ORDER BY created_at DESC
@@ -413,17 +406,17 @@ export async function listRequestsForEmail(email: string): Promise<BookRequest[]
 }
 
 /** Everything this address paid for on someone else's behalf, newest first. */
-export async function listRequestsSponsoredBy(email: string): Promise<BookRequest[]> {
-  await ensureSchema()
+export async function listRequestsSponsoredBy(email: string, accountId?: string): Promise<BookRequest[]> {
+  await ensureRequestsSchema()
   const rows = await db()`
-    SELECT * FROM book_requests WHERE lower(sponsor_email) = ${normalizeEmail(email)}
+    SELECT * FROM book_requests WHERE sponsor_account_id = ${accountId || null} OR (sponsor_account_id IS NULL AND lower(sponsor_email) = ${normalizeEmail(email)})
     ORDER BY created_at DESC
   `
   return rows.map(fromRow)
 }
 
 export async function listOpenRequests(): Promise<BookRequest[]> {
-  await ensureSchema()
+  await ensureRequestsSchema()
   const rows = await db()`
     SELECT * FROM book_requests WHERE status = 'open' ORDER BY created_at DESC
   `
@@ -479,27 +472,25 @@ export async function listOpenRequestsAtDestination(destination: string): Promis
   return open.filter(r => destinationKey(r) === destination)
 }
 
-export async function findRequestByLuluJobId(jobId: string | number): Promise<BookRequest | null> {
-  await ensureSchema()
-  const rows = await db()`SELECT * FROM book_requests WHERE lulu_job_id = ${String(jobId)}`
-  return rows[0] ? fromRow(rows[0]) : null
-}
-
 export async function updateRequest(id: string, patch: Partial<BookRequest>): Promise<BookRequest | null> {
   const current = await getRequest(id)
   if (!current) return null
   const next = { ...current, ...patch }
-  await upsert(next)
-  return next
+  const rows = await db()`UPDATE book_requests SET
+    items = ${JSON.stringify(next.items)}::jsonb, message = ${next.message}, name = ${next.name},
+    email = ${next.email}, phone = ${next.phone}, address = ${JSON.stringify(next.address)}::jsonb
+    WHERE id = ${id} AND status = ${current.status} AND items = ${JSON.stringify(current.items)}::jsonb
+      AND message = ${current.message} AND address = ${JSON.stringify(current.address)}::jsonb
+    RETURNING *`
+  return rows[0] ? fromRow(rows[0]) : null
 }
 
 /**
  * Mark the sponsored books of a request fulfilled and leave the rest on the board.
  *
  * A gift that covers everything simply closes the request. A partial gift is
- * split: the funded books move to their own fulfilled record — it carries the
- * Stripe session and Lulu job, so shipping updates land on the parcel they
- * belong to — and the original request keeps the copies nobody has funded yet.
+ * split: the funded books move to their own fulfilled record, so fulfilment
+ * updates land on the parcel they belong to, and the original request keeps the copies nobody has funded yet.
  *
  * Returns the fulfilled record.
  */
@@ -529,6 +520,19 @@ export async function fulfilItems(
 }
 
 export async function deleteRequest(id: string): Promise<void> {
-  await ensureSchema()
-  await db()`DELETE FROM book_requests WHERE id = ${id}`
+  await ensureRequestsSchema()
+  const rows = await db()`UPDATE book_requests SET status = 'cancelled' WHERE id = ${id} AND status = 'open' RETURNING id`
+  if (!rows.length) throw createError({ statusCode: 409, statusMessage: 'This request is no longer open.' })
+}
+
+/** Match only identities held by the signed-in durable account, or its verified inbox. */
+export async function listRequestsForOwner(email: string | undefined, keys: string[], accountId?: string): Promise<BookRequest[]> {
+  await ensureRequestsSchema()
+  const rows = await db()`SELECT * FROM book_requests r WHERE
+    r.account_id = ${accountId || null}
+    OR (r.account_id IS NULL AND ${email || ''} <> '' AND lower(email) = ${email ? normalizeEmail(email) : ''})
+    OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(r.requesters, CASE WHEN r.requester IS NOT NULL THEN jsonb_build_array(r.requester) ELSE '[]'::jsonb END)) AS identity
+      WHERE (identity->>'provider') || ':' || (identity->>'subject') = ANY(${keys}::text[]))
+    ORDER BY created_at DESC`
+  return rows.map(fromRow)
 }

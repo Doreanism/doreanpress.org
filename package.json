@@ -4,11 +4,13 @@
   "type": "module",
   "scripts": {
     "build": "nuxt build",
+    "predev": "npm run dev:services",
     "dev": "nuxt dev",
+    "dev:services": "docker compose -f docker-compose.dev.yml up -d --wait --wait-timeout 60",
+    "dev:services:stop": "docker compose -f docker-compose.dev.yml stop",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
-    "lulu:prices": "node --env-file-if-exists=.env scripts/lulu-prices.ts",
     "typecheck": "nuxt typecheck",
     "test": "vitest run"
   },
@@ -23,7 +25,6 @@
     "nodemailer": "^9.0.5",
     "nuxt": "^4.4.8",
     "nuxt-auth-utils": "^0.5.29",
-    "stripe": "^22.3.0",
     "tailwindcss": "^4.3.1"
   },
   "devDependencies": {

@@ -74,6 +74,7 @@ const anyProvider = computed(() => challengeOptions.value.length > 0)
  * The button stays live because readers may attach multiple accounts from the
  * same service; authenticating one already present simply refreshes its data.
  */
+const { signedIn } = useSignedIn()
 const { identities } = useIdentityProof()
 const attachedCount = (id: IdentityProvider) => identities.value.filter(i => i.provider === id).length
 const isAttached = (id: IdentityProvider) => attachedCount(id) > 0
@@ -99,8 +100,6 @@ const attachedHint = (id: IdentityProvider, label: string) => {
  * placeholder that resolves into nothing.
  */
 const settled = computed(() => status.value === 'success' || status.value === 'error')
-
-const allowance = 'You can attach multiple profiles, including more than one account from the same service.'
 
 function challengeUrl(provider: IdentityProvider, handle?: string) {
   const params = new URLSearchParams({ redirect: props.redirect || route.fullPath })
@@ -192,32 +191,31 @@ const providerOptions = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
-    <div
-      v-if="!adding"
-      class="flex items-start gap-3 rounded-lg bg-elevated/50 p-4"
-    >
-      <UIcon
-        name="i-lucide-shield-check"
-        class="mt-0.5 size-5 shrink-0 text-primary"
-      />
-      <div class="space-y-1 text-sm">
-        <p class="font-medium text-highlighted">
-          Show that a public account stands behind this
-        </p>
-        <p class="text-muted">
-          A sponsor is a stranger paying for your books out of their own pocket. A public
-          account beside your request lets them see who they're giving to.
-          {{ allowance }}
-        </p>
-        <p class="text-muted">
-          Your name, photo and profile link appear on the board. Your address, email and
-          phone number never do.
-        </p>
+  <EmailSignIn v-if="!signedIn?.email" />
+  <template v-else>
+    <div class="flex flex-col gap-4">
+      <div
+        v-if="!adding"
+        class="flex items-start gap-3 rounded-lg bg-elevated/50 p-4"
+      >
+        <UIcon
+          name="i-lucide-shield-check"
+          class="mt-0.5 size-5 shrink-0 text-primary"
+        />
+        <div class="space-y-1 text-sm">
+          <p class="font-medium text-highlighted">
+            Your profile appears with your request
+          </p>
+          <p class="text-muted">
+            Sponsors will see your name, photo and public profile link alongside your message.
+          </p>
+          <p class="text-muted">
+            Your email stays private.
+          </p>
+        </div>
       </div>
-    </div>
 
-    <!--
+      <!--
       The list is still coming. Only reachable on a client-side navigation —
       a page rendered on the server has the answer before it has any HTML.
 
@@ -225,16 +223,16 @@ const providerOptions = computed(() => {
       question whatever the answer turns out to be, and standing chips hold the
       row at its real height so nothing below it moves when the logos land.
     -->
-    <div
-      v-if="!settled"
-      class="flex flex-col gap-2"
-    >
-      <p class="text-sm font-medium text-highlighted">
-        {{ adding
-          ? 'Attach another profile?'
-          : 'What social media profiles would you like to attach to this request?' }}
-      </p>
-      <!--
+      <div
+        v-if="!settled"
+        class="flex flex-col gap-2"
+      >
+        <p class="text-sm font-medium text-highlighted">
+          {{ adding
+            ? 'Attach another account'
+            : 'Choose an account to attach' }}
+        </p>
+        <!--
         One row, never two. How many providers are coming is not known until
         they arrive, so the count here is a guess — and a guess that wraps onto
         three lines on a phone and then collapses to one drags the whole page
@@ -242,30 +240,30 @@ const providerOptions = computed(() => {
         chips do not wrap and the surplus is clipped: whatever the answer, this
         occupies exactly the height of a single row of buttons.
       -->
-      <div
-        class="flex h-8 gap-2 overflow-hidden"
-        aria-hidden="true"
-      >
-        <USkeleton
-          v-for="n in 6"
-          :key="n"
-          class="h-8 w-24 shrink-0 rounded-md"
-        />
+        <div
+          class="flex h-8 gap-2 overflow-hidden"
+          aria-hidden="true"
+        >
+          <USkeleton
+            v-for="n in 6"
+            :key="n"
+            class="h-8 w-24 shrink-0 rounded-md"
+          />
+        </div>
       </div>
-    </div>
 
-    <div
-      v-else-if="anyProvider"
-      class="flex flex-col gap-3"
-    >
-      <div class="flex flex-col gap-2">
-        <p class="text-sm font-medium text-highlighted">
-          {{ adding
-            ? 'Attach another profile?'
-            : 'What social media profiles would you like to attach to this request?' }}
-        </p>
+      <div
+        v-else-if="anyProvider"
+        class="flex flex-col gap-3"
+      >
+        <div class="flex flex-col gap-2">
+          <p class="text-sm font-medium text-highlighted">
+            {{ adding
+              ? 'Attach another account'
+              : 'Choose an account to attach' }}
+          </p>
 
-        <!--
+          <!--
           Every provider is a link straight to its own sign-in, because every
           provider now does the same thing. The picker used to be two steps —
           choose, then read what that choice would establish, then act — which
@@ -273,99 +271,95 @@ const providerOptions = computed(() => {
           route the sentence is the same for all of them, so it is said once
           above rather than n times behind a click.
         -->
-        <div class="flex flex-wrap gap-2">
-          <template
-            v-for="provider in providerOptions"
-            :key="provider.id"
-          >
-            <UButton
-              v-if="provider.id === HANDLE_PROVIDER"
-              :icon="provider.icon"
-              :label="provider.label"
-              color="neutral"
-              variant="subtle"
-              size="sm"
-              :class="handleFor === provider.id ? 'ring-2 ring-primary' : ''"
-              :ui="{ leadingIcon: BRAND[provider.id] }"
-              :aria-pressed="handleFor === provider.id"
-              :trailing-icon="isAttached(provider.id) ? 'i-lucide-check' : undefined"
-              :title="isAttached(provider.id) ? attachedHint(provider.id, provider.label) : undefined"
-              @click="choose(provider.id)"
-            />
-            <UButton
-              v-else
-              :to="challengeUrl(provider.id)"
-              external
-              :icon="provider.icon"
-              :label="provider.label"
-              color="neutral"
-              variant="subtle"
-              size="sm"
-              :ui="{ leadingIcon: BRAND[provider.id] }"
-              :trailing-icon="isAttached(provider.id) ? 'i-lucide-check' : undefined"
-              :title="isAttached(provider.id) ? attachedHint(provider.id, provider.label) : undefined"
-            />
-          </template>
+          <div class="flex flex-wrap gap-2">
+            <template
+              v-for="provider in providerOptions"
+              :key="provider.id"
+            >
+              <UButton
+                v-if="provider.id === HANDLE_PROVIDER"
+                :icon="provider.icon"
+                :label="provider.label"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+                :class="handleFor === provider.id ? 'ring-2 ring-primary' : ''"
+                :ui="{ leadingIcon: BRAND[provider.id] }"
+                :aria-pressed="handleFor === provider.id"
+                :trailing-icon="isAttached(provider.id) ? 'i-lucide-check' : undefined"
+                :title="isAttached(provider.id) ? attachedHint(provider.id, provider.label) : undefined"
+                @click="choose(provider.id)"
+              />
+              <UButton
+                v-else
+                :to="challengeUrl(provider.id)"
+                external
+                :icon="provider.icon"
+                :label="provider.label"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+                :ui="{ leadingIcon: BRAND[provider.id] }"
+                :trailing-icon="isAttached(provider.id) ? 'i-lucide-check' : undefined"
+                :title="isAttached(provider.id) ? attachedHint(provider.id, provider.label) : undefined"
+              />
+            </template>
+          </div>
         </div>
+
+        <UFormField
+          v-if="handleFor"
+          :label="`Your ${providerLabel(handleFor)} handle`"
+        >
+          <div class="flex gap-2">
+            <UInput
+              v-model="handle"
+              class="flex-1"
+              placeholder="alice.bsky.social"
+              autocapitalize="none"
+              autocorrect="off"
+              spellcheck="false"
+              autofocus
+              @keydown.enter.prevent="goToHandleProvider()"
+            />
+            <UButton
+              icon="i-lucide-external-link"
+              label="Continue"
+              color="neutral"
+              :disabled="!handle.trim()"
+              @click="goToHandleProvider()"
+            />
+          </div>
+          <template #help>
+            Enter your Bluesky handle, then sign in to confirm it’s yours.
+          </template>
+        </UFormField>
+
+        <p class="text-sm text-muted">
+          Sign in with your provider to confirm the account is yours. You’ll return here afterward.
+          We won’t post on your behalf.
+        </p>
       </div>
 
-      <UFormField
-        v-if="handleFor"
-        :label="`Your ${providerLabel(handleFor)} handle`"
-      >
-        <div class="flex gap-2">
-          <UInput
-            v-model="handle"
-            class="flex-1"
-            placeholder="alice.bsky.social"
-            autocapitalize="none"
-            autocorrect="off"
-            spellcheck="false"
-            autofocus
-            @keydown.enter.prevent="goToHandleProvider()"
-          />
-          <UButton
-            icon="i-lucide-external-link"
-            label="Continue"
-            color="neutral"
-            :disabled="!handle.trim()"
-            @click="goToHandleProvider()"
-          />
-        </div>
-        <template #help>
-          Bluesky is many servers, so your handle is how we find yours — you'll still sign
-          in there. Typing someone else's gets you their sign-in page, not their account.
-        </template>
-      </UFormField>
-
-      <p class="text-sm text-muted">
-        You'll go to the provider, sign in, and come straight back. That proves the account
-        is yours, which is the only thing we're willing to show a sponsor. We never post
-        anything.
-      </p>
-    </div>
-
-    <!--
+      <!--
       Settled, and empty. The tail of a three-way chain rather than a plain
       `v-else` on `anyProvider`, because "we haven't asked yet" must never be
       drawn as "this site can take no requests".
     -->
-    <p
-      v-else
-      class="rounded-md bg-elevated/50 p-3 text-sm text-muted"
-    >
-      No way to verify an account is configured on this site yet, so requests can't be
-      posted. Please
-      <ULink
-        to="/#about"
-        class="text-primary"
-      >get in touch</ULink> and we'll sort it out.
-    </p>
+      <p
+        v-else
+        class="rounded-md bg-elevated/50 p-3 text-sm text-muted"
+      >
+        Account attachment is currently unavailable. Please
+        <ULink
+          to="/#about"
+          class="text-primary"
+        >contact us</ULink> for help requesting a book.
+      </p>
 
-    <p class="text-xs text-dimmed">
-      We read your public profile once and keep nothing beyond what you see above. You
-      are not creating an account and there is no password. We never post anything, and
-      we don't ask for your contacts or your friends.
-    </p>
-  </div>
+      <p class="text-xs text-dimmed">
+        This profile is saved to your Dorean Press account. You can use it to sign in again.
+      </p>
+    </div>
+  </template>
 </template>

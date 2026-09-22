@@ -3,7 +3,7 @@ import { catalog } from '#shared/catalog'
 
 useSeoMeta({
   title: 'Catalog',
-  description: 'The Doctrine of Simony by Conley Owens, printed on demand and sold at cost by Dorean Press.'
+  description: 'The Doctrine of Simony by Conley Owens, available on Amazon and in free digital editions.'
 })
 </script>
 

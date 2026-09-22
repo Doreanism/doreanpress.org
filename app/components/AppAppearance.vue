@@ -1,12 +1,9 @@
 <script setup lang="ts">
 // The light/dark/system choice.
 //
-// One section of the one corner menu, and unconditionally so. It used to live
-// in the gear when you were signed out and move into the account menu when you
-// were signed in, which is the arrangement that made a merged corner unworkable
-// — a control you have to go looking for in a different place depending on your
-// own state. Kept a component of its own because it is a distinct subject
-// inside that menu, not because it has anywhere else to go.
+// One section of the signed-in account menu. Signed out, the corner shows a
+// plain light/dark toggle instead (see AppAccountMenu), so this is where System
+// lives.
 const colorMode = useColorMode()
 
 const appearances = [

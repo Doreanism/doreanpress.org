@@ -1,6 +1,4 @@
 <script setup lang="ts">
-const { count } = useCart()
-
 // An identity challenge happens by leaving the site and coming back, so a
 // failure surfaces as a flag on the return URL rather than a rejected fetch.
 useChallengeFeedback()
@@ -26,6 +24,8 @@ if (!import.meta.prerender) {
   const { refresh } = useSignedIn()
   await useAsyncData('signed-in', () => refresh())
 }
+
+const development = import.meta.dev
 
 const nav = [
   { label: 'Catalog', to: '/catalog', icon: 'i-lucide-library' },
@@ -60,7 +60,7 @@ useSeoMeta({
   <UApp :toaster="{ progress: false, position: 'bottom-right' }">
     <FreelyGiven />
 
-    <UHeader>
+    <UHeader class="static">
       <template #left>
         <AppLogo size="h-8 w-auto" />
       </template>
@@ -69,50 +69,17 @@ useSeoMeta({
 
       <template #right>
         <!--
-          Two buttons: this one is you and how you see the site, the cart is
-          what you are buying. The gear that stood here folded into the person
-          beside it — one place to look rather than a choice about which of two
-          corners a setting lives in.
+          Signed out, this corner is a light/dark toggle and Sign in; signed
+          in, it is the person menu, which holds appearance too. Either way the
+          cart beside it is what you are buying.
 
-          Client-only, because a prerendered page has no reader: `/` is one file
-          served to everybody, so whatever this rendered at build time would be
-          wrong for all but one of them. The fallback holds the slot so the
-          corner does not jump as it resolves.
-
-          That now covers Appearance too, which the gear used to render on the
-          server. No loss: the control inside was already client-only — it
-          cannot know which theme this browser holds until it is in it — so it
-          arrived disabled either way, and it sits behind a click that cannot
-          happen before hydration.
+          Rendered on the server: the reader is resolved above before any page
+          renders, so the HTML already has the right shape and nothing flashes
+          on refresh. The one exception is the prerendered `/`, which has no
+          reader at build time — the menu holds an empty slot there until the
+          client asks.
         -->
-        <ClientOnly>
-          <AppAccountMenu />
-
-          <template #fallback>
-            <UButton
-              icon="i-lucide-circle-user-round"
-              color="neutral"
-              variant="ghost"
-              disabled
-              aria-hidden="true"
-            />
-          </template>
-        </ClientOnly>
-
-        <UChip
-          :text="count"
-          :show="count > 0"
-          size="2xl"
-          color="primary"
-        >
-          <UButton
-            to="/cart"
-            icon="i-lucide-shopping-cart"
-            color="neutral"
-            variant="ghost"
-            aria-label="Cart"
-          />
-        </UChip>
+        <AppAccountMenu />
       </template>
 
       <template #body>
@@ -163,5 +130,6 @@ useSeoMeta({
         </div>
       </UContainer>
     </footer>
+    <DevMailpit v-if="development" />
   </UApp>
 </template>

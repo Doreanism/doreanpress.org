@@ -53,7 +53,7 @@ function resolveConfig(): EmailConfig {
     apiKey,
     smtpUrl,
     sandbox: String(cfg.brevoSandbox) === 'true',
-    sender: parseSender(cfg.fromEmail || 'Dorean Press <hello@doreanpress.org>'),
+    sender: parseSender(cfg.fromEmail || 'Dorean Press <info@doreanpress.org>'),
     pressEmail: cfg.pressEmail || '',
     mock: !apiKey && !smtpUrl
   }
@@ -68,7 +68,7 @@ export function pressEmailAddress(): string {
   return resolveConfig().pressEmail
 }
 
-export async function sendEmail(message: EmailMessage): Promise<void> {
+export async function sendEmail(message: EmailMessage, throwOnFailure = false): Promise<void> {
   const cfg = resolveConfig()
 
   if (!message.to) return
@@ -112,6 +112,7 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
       }
     })
   } catch (err) {
+    if (throwOnFailure) throw err
     // Never let an email failure break the request/fulfilment flow.
     console.error(`[email] failed to send "${message.subject}" to ${message.to}:`, err)
   }
@@ -268,31 +269,21 @@ ${SIGNATURE}`
 }
 
 /**
- * The sign-in code.
+ * The sign-in link.
  *
- * Says what it is for and that an unexpected one can be ignored — a code
+ * Says what it is for and that an unexpected one can be ignored — a link
  * arriving unasked means somebody typed this address, and the honest thing is to
  * tell the reader that nothing has happened and nothing needs to.
  */
-export function signInCodeEmail(params: { to: string, code: string, minutes: number }): EmailMessage {
-  const { to, code, minutes } = params
-  const text = `Your Dorean Press sign-in code is ${code}
-
-It works for the next ${minutes} minutes, once.
-
-If you didn't ask to sign in, nothing has happened and you can ignore this — the
-code is useless to anyone who doesn't have it, and we won't email you again
-about it.
-
-${SIGNATURE}`
+export function signInLinkEmail(params: { to: string, url: string, minutes: number }): EmailMessage {
+  const { to, url, minutes } = params
   return {
     to,
-    subject: `${code} is your Dorean Press sign-in code`,
-    text,
-    html: layout(`<p>Your sign-in code is:</p>
-<p style="font-size:28px;font-weight:700;letter-spacing:0.18em;margin:16px 0;">${code}</p>
-<p>It works for the next ${minutes} minutes, once.</p>
-<p>If you didn’t ask to sign in, nothing has happened and you can ignore this.</p>`)
+    subject: 'Sign in to Dorean Press',
+    text: `Sign in to Dorean Press:\n\n${url}\n\nOpen this link to sign in. It works once, for ${minutes} minutes. If you requested another link, use the newest email.\n\nIf you did not ask to sign in, you can ignore this email.\n\n${SIGNATURE}`,
+    html: layout(`<p><a href="${url}">Sign in to Dorean Press</a></p>
+<p>Open the link to sign in. It works once, for ${minutes} minutes. If you requested another link, use the newest email.</p>
+<p>If you did not ask to sign in, you can ignore this email.</p>`)
   }
 }
 

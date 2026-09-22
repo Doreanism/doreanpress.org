@@ -3,12 +3,9 @@ import {
   catalog,
   coversWholeRequest,
   itemsCopies,
-  itemsSubtotalCents,
   itemTitles,
   limitItems,
   mergeItems,
-  SPONSOR_SHIPPING_CENTS,
-  sponsorTotalCents,
   subtractItems,
   summarizeTitles
 } from '../shared/catalog'
@@ -32,7 +29,7 @@ describe('catalog', () => {
       pdfUrl: 'https://simony.info/the-doctrine-of-simony.pdf',
       epubUrl: 'https://simony.info/the-doctrine-of-simony.epub',
       amazonUrl: 'https://www.amazon.com/dp/B0HKC6P7N6',
-      lulu: { pageCount: 332 }
+      pageCount: 332
     })
   })
 })
@@ -47,27 +44,8 @@ describe('itemsCopies', () => {
   })
 })
 
-describe('itemsSubtotalCents', () => {
-  it('scales with quantity', () => {
-    const one = itemsSubtotalCents([{ slug: A, quantity: 1 }])
-    expect(itemsSubtotalCents([{ slug: A, quantity: 3 }])).toBe(one * 3)
-  })
-
-  it('skips slugs that are no longer in the catalog rather than throwing', () => {
-    const real = itemsSubtotalCents([{ slug: A, quantity: 1 }])
-    expect(itemsSubtotalCents([{ slug: A, quantity: 1 }, { slug: UNKNOWN, quantity: 9 }])).toBe(real)
-  })
-})
-
-describe('sponsorTotalCents', () => {
-  it('charges shipping once however many books are in the order', () => {
-    const items = [{ slug: A, quantity: 2 }, { slug: B, quantity: 4 }]
-    expect(sponsorTotalCents(items)).toBe(itemsSubtotalCents(items) + SPONSOR_SHIPPING_CENTS)
-  })
-})
-
-// The gate every untrusted selection passes through before anything is charged
-// or printed: a sponsor's POST, or a webhook replayed after someone else gave.
+// The gate every untrusted selection passes through before anything is reserved
+// or ordered: a sponsor's POST, or a webhook replayed after someone else gave.
 describe('limitItems', () => {
   const available = [{ slug: A, quantity: 2 }, { slug: B, quantity: 1 }]
 

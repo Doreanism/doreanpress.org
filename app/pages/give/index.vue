@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import {
-  coversWholeRequest,
   findBook,
-  formatPrice,
   itemsCopies,
-  sponsorTotalCents,
   type RequestItem
 } from '#shared/catalog'
 import { sharesAccount } from '#shared/identity'
@@ -12,12 +9,13 @@ import type { PublicBookRequest } from '~~/server/utils/requests'
 
 useSeoMeta({
   title: 'Give a Book',
-  description: 'Readers have asked for a copy they cannot pay for. Sponsor one, and we’ll print and ship it to them at cost.'
+  description: 'Give to the Dorean Press book ministry and recommend a reader’s request for an author copy.'
 })
 
 const route = useRoute()
 const toast = useToast()
 const sponsoringId = ref<string | null>(null)
+const handoff = ref<{ url: string, recommendation: string, question: string } | null>(null)
 
 // One card per order, and a reader has one open order per address: asking again
 // for the same doorstep adds the books to what is already here rather than
@@ -30,7 +28,7 @@ onMounted(() => {
   if (route.query.sponsored) {
     toast.add({
       title: 'Thank you for giving',
-      description: 'The request you sponsored is on its way to the press. The reader will receive it soon.',
+      description: 'Thank you. We confirm gifts after Zeffy reports a completed payment.',
       icon: 'i-lucide-heart',
       color: 'primary'
     })
@@ -50,47 +48,16 @@ function isSponsorable(items: RequestItem[]) {
   return linesFor(items).length > 0
 }
 
-// A sponsor can cover a whole order or pick out part of it, so every card
-// carries its own selection — seeded with everything the reader asked for, since
-// giving the lot is the common case.
 const picks = reactive<Record<string, RequestItem[]>>({})
-
 watch(requests, (list) => {
-  for (const req of list ?? []) {
-    if (!picks[req.id]) picks[req.id] = linesFor(req.items).map(l => ({ ...l.item }))
-  }
+  for (const req of list || []) picks[req.id] ??= req.items.map(item => ({ ...item }))
 }, { immediate: true })
 
-function selection(req: PublicBookRequest): RequestItem[] {
-  return picks[req.id] ?? req.items
-}
-
-/** How the sponsor button reads, given how much of the request is picked. */
-function sponsorLabel(req: PublicBookRequest) {
-  const chosen = selection(req)
-  const price = formatPrice(sponsorTotalCents(chosen))
-  if (chosen.length === 0) return 'Pick a book to sponsor'
-  if (coversWholeRequest(req.items, chosen)) {
-    return `${req.items.length > 1 ? 'Sponsor this order' : 'Sponsor this copy'} · ${price}`
-  }
-  const copies = itemsCopies(chosen)
-  return `Sponsor ${copies} of ${itemsCopies(req.items)} copies · ${price}`
-}
-
 async function sponsor(id: string) {
-  const chosen = picks[id]
-  if (chosen && chosen.length === 0) return
   sponsoringId.value = id
   try {
-    const { url } = await $fetch<{ url: string | null }>(`/api/requests/${id}/sponsor`, {
-      method: 'POST',
-      body: { items: chosen }
-    })
-    if (url) {
-      await navigateTo(url, { external: true })
-    } else {
-      throw new Error('No checkout URL')
-    }
+    handoff.value = await $fetch(`/api/requests/${id}/sponsor`, { method: 'POST', body: { items: picks[id] } })
+    sponsoringId.value = null
   } catch (err) {
     const message = (err as { data?: { statusMessage?: string } })?.data?.statusMessage || 'Could not start checkout.'
     toast.add({ title: 'Sponsorship failed', description: message, icon: 'i-lucide-triangle-alert', color: 'error' })
@@ -113,7 +80,7 @@ async function removeMine(req: PublicBookRequest) {
   removingId.value = req.id
   try {
     await $fetch(`/api/requests/${req.id}`, { method: 'DELETE' })
-    await refresh()
+    await Promise.all([refresh(), refreshNuxtData('orders')])
     toast.add({
       title: 'Off the board',
       description: 'Your request has been removed. You can ask again any time.',
@@ -146,8 +113,25 @@ function formatDate(iso: string) {
     <UPageHeader
       :ui="{ title: 'font-display' }"
       title="Give a Book"
-      description="Some readers have asked for books they cannot pay for. Sponsor a whole request, or just the books you can — we print on demand and ship straight to them, and anything left over stays here for the next giver. Freely you have received; freely give."
+      description="Give to Lakewood Village Baptist Church’s Dorean Press ministry through Zeffy. You may recommend a request; the church retains control and discretion over every gift. If a request cannot be filled, your gift remains in the book ministry."
     />
+
+    <div
+      v-if="handoff"
+      class="mt-6 rounded-lg ring ring-default p-5 space-y-3"
+    >
+      <h2 class="font-semibold">
+        Your recommendation
+      </h2>
+      <p>Copy this code into the “{{ handoff.question }}” field on Zeffy: <strong class="break-all">{{ handoff.recommendation }}</strong></p>
+      <p>This request is reserved for 30 minutes. A late gift, or a gift without this code, goes to the general Give a Book balance.</p>
+      <p>Zeffy’s own contribution is optional and may be set to zero. No goods or services are provided to you in return for your gift.</p>
+      <UButton
+        :to="handoff.url"
+        target="_blank"
+        label="Continue to Zeffy"
+      />
+    </div>
 
     <div
       v-if="!requests || requests.length === 0"
@@ -181,9 +165,9 @@ function formatDate(iso: string) {
         <div class="flex flex-col gap-3">
           <RequestBooks
             :items="req.items"
-            :model-value="selection(req)"
+            :model-value="picks[req.id] || req.items"
             selectable
-            @update:model-value="(v: RequestItem[]) => picks[req.id] = v"
+            @update:model-value="(items: RequestItem[]) => picks[req.id] = items"
           />
 
           <p class="text-xs text-dimmed">
@@ -194,29 +178,23 @@ function formatDate(iso: string) {
           </p>
         </div>
 
-        <RequestMessage :message="req.message" />
+        <RequestMessage
+          v-if="req.message"
+          :message="req.message"
+        />
 
         <div class="flex flex-col gap-2">
           <UButton
-            :label="sponsorLabel(req)"
+            label="Give and recommend these books"
             icon="i-lucide-gift"
             color="primary"
             block
             :loading="sponsoringId === req.id"
-            :disabled="!isSponsorable(req.items) || selection(req).length === 0"
+            :disabled="!isSponsorable(req.items) || picks[req.id]?.length === 0"
             @click="sponsor(req.id)"
           />
           <p class="text-center text-xs text-dimmed">
-            <template v-if="selection(req).length === 0">
-              Tick the books you’d like to cover — any you leave stay on the board for someone else.
-            </template>
-            <template v-else-if="coversWholeRequest(req.items, selection(req))">
-              Covers {{ req.items.length > 1 ? 'every book in the order' : 'the book' }} plus shipping, printed and
-              shipped in one parcel.
-            </template>
-            <template v-else>
-              Covers just the books you picked, plus shipping. The rest stays on the board for someone else.
-            </template>
+            Your recommendation helps us decide which request to fill next.
           </p>
           <UButton
             v-if="isMine(req)"

@@ -5,5 +5,6 @@
 // they are looking at.
 
 export default defineEventHandler(async (event) => {
+  setResponseHeader(event, 'Cache-Control', 'private, no-store')
   return { signedIn: await readSignedIn(event) }
 })
