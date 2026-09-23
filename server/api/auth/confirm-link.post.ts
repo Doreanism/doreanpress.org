@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
     await requireEmailAccount(event, 'adding an email')
     await addVerifiedEmail(login.accountId, login.email)
     await claimAccountRecords(login.accountId)
-    return { signedIn: await readSignedIn(event), redirect: '/profiles' }
+    return { signedIn: await readSignedIn(event), redirect: '/emails' }
   }
   const signedIn = await signIn(event, login.email)
   await claimAccountRecords(signedIn.accountId)

@@ -15,7 +15,10 @@ export default defineNuxtConfig({
   // Server-only secrets + public config. Override in production with
   // NUXT_*-prefixed environment variables (see .env.example).
   runtimeConfig: {
-    zeffy: { campaignUrl: '', campaignId: '', webhookSecret: '', apiKey: '', recommendationQuestion: 'Dorean Press recommendation code' },
+    zeffy: { campaignUrl: '', campaignId: '', webhookSecret: '', apiKey: '', recommendationQuestion: 'Dorean Press request code' },
+    // US single-copy checkout: $4.98 printing + $3.59 shipping + $0.84 tax.
+    // Additional copies remain a provisional $7 each.
+    giftEstimate: { firstCopyCents: 941, additionalCopyCents: 700 },
     easypost: { apiKey: '', webhookSecret: '' },
     maintenanceSecret: '',
     // Transactional email (Brevo). When the key is missing, emails are logged

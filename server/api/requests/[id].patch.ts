@@ -1,4 +1,5 @@
 import { findBook, type RequestItem } from '#shared/catalog'
+import { canEditRequestAddress } from '../../utils/requestEditability'
 
 // Edit an open request. Only the account that posted it may change it — see
 // `requireRequestOwner`.
@@ -36,6 +37,7 @@ export default defineEventHandler(async (event) => {
   }
 
   await requireRequestOwner(event, request)
+  if ((request.fundedCents || 0) > 0) throw createError({ statusCode: 409, statusMessage: 'This request has received contributions and cannot be changed or withdrawn.' })
 
   if (request.status !== 'open') {
     throw createError({
@@ -45,6 +47,9 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody<Body>(event)
+  if ((body?.address !== undefined || body?.name !== undefined) && !canEditRequestAddress(request)) {
+    throw createError({ statusCode: 409, statusMessage: 'Shipped or cancelled orders cannot have their address changed.' })
+  }
   const patch: Partial<BookRequest> = {}
   const invalid: string[] = []
 

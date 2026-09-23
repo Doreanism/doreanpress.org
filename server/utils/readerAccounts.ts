@@ -13,26 +13,28 @@ function ensureSchema() {
   if (!schema) {
     schema = (async () => {
       const sql = db()
-      await sql`
+      // One database round trip; statements still execute in order.
+      await sql.transaction([
+        sql`
         CREATE TABLE IF NOT EXISTS reader_accounts (
           id         text PRIMARY KEY,
           email      text UNIQUE,
           created_at text NOT NULL,
           updated_at text NOT NULL
         )
-      `
-      await sql`ALTER TABLE reader_accounts ADD COLUMN IF NOT EXISTS primary_identity text`
-      await sql`
+      `,
+        sql`ALTER TABLE reader_accounts ADD COLUMN IF NOT EXISTS primary_identity text`,
+        sql`
         CREATE TABLE IF NOT EXISTS reader_emails (
           email text PRIMARY KEY,
           account_id text NOT NULL REFERENCES reader_accounts(id) ON DELETE CASCADE,
           verified_at timestamptz NOT NULL DEFAULT now()
         )
-      `
-      await sql`CREATE INDEX IF NOT EXISTS reader_emails_account_idx ON reader_emails(account_id)`
-      await sql`INSERT INTO reader_emails(email, account_id)
-        SELECT email, id FROM reader_accounts WHERE email IS NOT NULL ON CONFLICT DO NOTHING`
-      await sql`
+      `,
+        sql`CREATE INDEX IF NOT EXISTS reader_emails_account_idx ON reader_emails(account_id)`,
+        sql`INSERT INTO reader_emails(email, account_id)
+        SELECT email, id FROM reader_accounts WHERE email IS NOT NULL ON CONFLICT DO NOTHING`,
+        sql`
         CREATE TABLE IF NOT EXISTS reader_identities (
           account_id      text NOT NULL REFERENCES reader_accounts(id) ON DELETE CASCADE,
           provider        text NOT NULL,
@@ -44,12 +46,12 @@ function ensureSchema() {
           PRIMARY KEY (account_id, provider, subject),
           UNIQUE (provider, subject)
         )
-      `
-      // Early builds allowed only one identity per provider. Widen the key in
-      // place so a reader may link, for example, both a personal and ministry X
-      // account while the global provider+subject uniqueness still prevents one
-      // social account from belonging to two Dorean accounts.
-      await sql`
+      `,
+        // Early builds allowed only one identity per provider. Widen the key in
+        // place so a reader may link, for example, both a personal and ministry X
+        // account while the global provider+subject uniqueness still prevents one
+        // social account from belonging to two Dorean accounts.
+        sql`
         DO $$
         BEGIN
           IF EXISTS (
@@ -64,11 +66,12 @@ function ensureSchema() {
               ADD CONSTRAINT reader_identities_pkey PRIMARY KEY (account_id, provider, subject);
           END IF;
         END $$
-      `
-      await sql`
+      `,
+        sql`
         CREATE INDEX IF NOT EXISTS reader_identities_account_idx
           ON reader_identities (account_id, attached_at)
       `
+      ])
     })().catch((err) => {
       schema = null
       throw err

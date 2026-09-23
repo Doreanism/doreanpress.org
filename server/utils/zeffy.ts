@@ -1,4 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import { estimateGift } from '#shared/giftEstimate'
+import type { RequestItem } from '#shared/catalog'
+import { normalizeGiftCode } from '#shared/giftCode'
 
 export function verifyZeffySignature(raw: string, header: string, secret: string, now = Date.now()) {
   if (!secret) return false
@@ -34,52 +37,66 @@ export async function recordZeffyGift(event: ZeffyPaymentEvent) {
     throw createError({ statusCode: 422, statusMessage: 'Unsupported Zeffy payment.' })
   }
   if (payment.campaign_id !== config.campaignId) return
-  const answer = payment.buyer_questions?.find(q => q.question === config.recommendationQuestion)?.answer
-  const reservationId = typeof answer === 'string' ? answer.trim() : ''
+  const answer = payment.buyer_questions?.find(q => [config.recommendationQuestion, 'Dorean Press request code', 'Dorean Press recommendation code'].includes(q.question))?.answer
+  const reservationId = typeof answer === 'string' ? normalizeGiftCode(answer) : ''
   const donorEmail = typeof payment.buyer?.email === 'string' ? payment.buyer.email.slice(0, 320) : ''
   const receipt = typeof payment.receipt_url === 'string' && /^https:\/\/(www\.)?zeffy\.com\//.test(payment.receipt_url) ? payment.receipt_url : null
   await ensureMinistrySchema()
   const sql = db()
+  // Older codes predate stored targets. Use their whole request's estimate.
+  const original = await sql`SELECT r.items, r.address FROM book_requests r
+    JOIN gift_reservations g ON g.request_id = r.id WHERE g.id = ${reservationId}`
+  const rates = useRuntimeConfig().giftEstimate
+  const legacyTarget = original[0]
+    ? estimateGift(original[0].items as RequestItem[],
+        Number(rates?.firstCopyCents), Number(rates?.additionalCopyCents), (original[0].address as { country: string }).country)
+    : null
   // A row lock serializes reservations, gift allocation, and edits for this request.
   // All payment writes and notifications commit together. Duplicate event/payment
   // ids do nothing, including when two webhook attempts arrive simultaneously.
   await sql.transaction([
     sql`SELECT id FROM book_requests WHERE id = (SELECT request_id FROM gift_reservations WHERE id = ${reservationId}) FOR UPDATE`,
     sql`WITH eligible AS (
-      SELECT r.id, reservation.items AS chosen FROM book_requests r JOIN gift_reservations reservation ON reservation.request_id = r.id
-      WHERE reservation.id = ${reservationId} AND reservation.expires_at > now()
-        AND r.status = 'open' AND NOT r.hidden AND r.items = COALESCE(reservation.original_items, reservation.items)
+      SELECT r.id, r.funded_cents,
+        COALESCE(r.funding_target_cents, reservation.target_cents, ${legacyTarget}::integer) AS target
+      FROM book_requests r JOIN gift_reservations reservation ON reservation.request_id = r.id
+      -- The browsing lease never determines whether a completed gift is valid.
+      WHERE reservation.id = ${reservationId} AND r.status = 'open' AND NOT r.hidden
+        AND r.items = COALESCE(reservation.original_items, reservation.items)
+    ), allocation AS (
+      SELECT id, target, LEAST(${payment.amount}, GREATEST(0, target - funded_cents)) AS credited
+      FROM eligible WHERE target > 0
     ), gift AS (
-      INSERT INTO ministry_gifts(payment_id, event_id, amount_cents, currency, donor_email, receipt_url, recommendation_id, request_id, allocation)
-      VALUES (${payment.id}, ${event.id}, ${payment.amount}, ${payment.currency}, ${donorEmail || null}, ${receipt}, ${reservationId || null},
-        (SELECT id FROM eligible), CASE WHEN EXISTS(SELECT 1 FROM eligible) THEN 'request' ELSE 'general' END)
-      ON CONFLICT DO NOTHING RETURNING payment_id, request_id
-    ), remainder AS (
-      INSERT INTO book_requests (id, items, message, requester, requesters, account_key, name, email, phone, address, status, created_at, hidden, account_id)
-      SELECT ${crypto.randomUUID()}, remaining.items, r.message, r.requester, r.requesters, r.account_key,
-        r.name, r.email, r.phone, r.address, 'open', r.created_at, r.hidden, r.account_id
-      FROM book_requests r JOIN gift ON gift.request_id = r.id JOIN eligible ON eligible.id = r.id
-      CROSS JOIN LATERAL (
-        SELECT jsonb_agg(jsonb_build_object('slug', line->>'slug', 'quantity', (line->>'quantity')::integer - COALESCE((selected.chosen->>'quantity')::integer, 0))) AS items
-        FROM jsonb_array_elements(r.items) line
-        LEFT JOIN LATERAL (SELECT value AS chosen FROM jsonb_array_elements(eligible.chosen) WHERE value->>'slug' = line->>'slug') selected ON true
-        WHERE (line->>'quantity')::integer > COALESCE((selected.chosen->>'quantity')::integer, 0)
-      ) remaining WHERE remaining.items IS NOT NULL
-    ), funded AS (
-      UPDATE book_requests r SET status = 'funded_awaiting_order', items = eligible.chosen, sponsor_email = ${donorEmail || null},
-        fulfillment = fulfillment || jsonb_build_object('fundedAt', now()::text)
-      FROM gift, eligible WHERE r.id = gift.request_id AND r.id = eligible.id RETURNING r.id
+      INSERT INTO ministry_gifts(payment_id, event_id, amount_cents, currency, donor_email, receipt_url,
+        recommendation_id, request_id, allocation, allocated_cents)
+      VALUES (${payment.id}, ${event.id}, ${payment.amount}, ${payment.currency}, ${donorEmail || null}, ${receipt},
+        ${reservationId || null}, (SELECT id FROM allocation WHERE credited > 0),
+        CASE WHEN EXISTS(SELECT 1 FROM allocation WHERE credited > 0) THEN 'request' ELSE 'general' END,
+        COALESCE((SELECT credited FROM allocation), 0))
+      ON CONFLICT DO NOTHING RETURNING payment_id, request_id, allocated_cents
+    ), credited AS (
+      UPDATE book_requests r SET funded_cents = r.funded_cents + gift.allocated_cents,
+        funding_target_cents = allocation.target,
+        status = CASE WHEN r.funded_cents + gift.allocated_cents >= allocation.target
+          THEN 'funded_awaiting_order' ELSE 'open' END,
+        fulfillment = CASE WHEN r.funded_cents + gift.allocated_cents >= allocation.target
+          THEN fulfillment || jsonb_build_object('fundedAt', now()::text) ELSE fulfillment END
+      FROM gift, allocation WHERE r.id = gift.request_id AND r.id = allocation.id
+      RETURNING r.id, r.status
     ), donor_notice AS (
       INSERT INTO ministry_outbox(id, recipient, subject, body)
       SELECT 'gift:' || payment_id, ${donorEmail}, 'Thank you for your gift to Dorean Press',
-        CASE WHEN EXISTS(SELECT 1 FROM funded)
-          THEN 'Your gift was received, and your recommended request is awaiting an author-copy order.'
-          ELSE 'Your gift was received into the general Give a Book balance. Your recommendation could not be applied to an eligible open request.' END
-        || ' Gifts are to Lakewood Village Baptist Church for the Dorean Press ministry. The church retains control and discretion over every gift. No goods or services are provided to you. Zeffy provides your receipt.'
+        CASE WHEN EXISTS(SELECT 1 FROM credited WHERE status = 'funded_awaiting_order')
+          THEN 'Your gift helped fully fund the request, which is now awaiting an author-copy order.'
+          WHEN allocated_cents > 0 THEN 'Your gift was added to this request. It remains open while other donors help fund the remaining cost.'
+          ELSE 'Your gift was received into the general Give a Book balance. The request code could not be applied to an eligible open request.' END
+        || CASE WHEN allocated_cents > 0 AND allocated_cents < ${payment.amount}
+          THEN ' The amount above the remaining cost went to the general fund.' ELSE '' END
+        || ' Dorean Press retains control and discretion over every gift. No goods or services are provided to you. Zeffy provides your receipt.'
       FROM gift WHERE ${Boolean(donorEmail)}
     ) INSERT INTO ministry_outbox(id, recipient, subject, body)
       SELECT 'task:' || id, ${pressEmailAddress()}, 'Dorean Press ordering task',
-        'A funded request is ready for manual KDP author-copy ordering: ' || ${useRuntimeConfig().public.siteUrl + '/admin/fulfillment'}
-      FROM funded WHERE ${Boolean(pressEmailAddress())}`
+        'A fully funded request is ready for manual KDP author-copy ordering: ' || ${useRuntimeConfig().public.siteUrl + '/admin/fulfillment'}
+      FROM credited WHERE status = 'funded_awaiting_order' AND ${Boolean(pressEmailAddress())}`
   ])
 }

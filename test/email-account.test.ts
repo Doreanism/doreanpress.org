@@ -2,7 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 afterEach(() => vi.unstubAllGlobals())
 it('requires email login even when a provider-only session exists', async () => {
-  vi.stubGlobal('db', () => async () => [{ id: 'legacy', email: null }])
+  const sql = async () => [{ id: 'legacy', email: null }]
+  vi.stubGlobal('db', () => Object.assign(sql, { transaction: (queries: Promise<unknown>[]) => Promise.all(queries) }))
   vi.stubGlobal('getUserSession', async () => ({ signedIn: { accountId: 'legacy', label: '@reader' } }))
   vi.stubGlobal('createError', (e: object) => Object.assign(new Error('Sign in'), e))
   const { requireEmailAccount } = await import('../server/utils/signedIn')

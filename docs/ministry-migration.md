@@ -2,26 +2,41 @@
 
 Print purchases go to each book's Amazon listing. Gifts use Zeffy. The gift
 endpoint returns 503 until Zeffy is configured.
-The homepage's pre-existing production “Coming Soon” gate remains in place.
+The production homepage displays the regular book launch content.
+
+## Organization
+
+Dorean Press is a ministry of **Lakewood Village Baptist Church** (the legal
+entity, EIN 94-2878622), which does business as **Silicon Valley Reformed Baptist
+Church**. Public copy says "Dorean Press" wherever it can. The legal and DBA
+names appear only where they must: the terms and privacy pages (which say who is
+responsible), Zeffy receipts (legal name), and the Zeffy/Stripe DBA, which must
+match the bank account (Silicon Valley Reformed Baptist Church). The card
+statement descriptor is "Dorean Press".
 
 ## Before production deployment
 
-1. Obtain church approval, set up the Zeffy organization/campaign under Lakewood
-   Village Baptist Church, and verify the bank account and receipt issuer.
-2. Add a text checkout question with the exact label `Dorean Press recommendation
+1. Obtain church approval, set up the Zeffy organization/campaign under the
+   church (see Organization above), and verify the bank account and receipt issuer.
+2. Add a text checkout question with the exact label `Dorean Press request
    code`. Donors copy a reservation code into it. The API documents `metadata`
    as reserved for future use, so this implementation does not assume arbitrary
-   URL metadata or custom checkout sessions. Reservations last 30 minutes.
-   Missing, expired, hidden, changed, or closed recommendations allocate gifts
-   to the general ministry balance. Selected books are reserved together; a completed gift moves those books into fulfillment and leaves any remaining copies on the board.
+   URL metadata or custom checkout sessions. Reservations last three minutes and renew every 45 seconds while the gift page is open. Closing or leaving the gift page sends a release request; the three-minute expiry remains the fallback if the browser cannot send it. Keep the gift page open when paying in a separate Zeffy tab. Expired reservations cannot be renewed; donors must reopen checkout for a new code.
+   A browsing hold expiring or being released does not invalidate its payment code:
+   delayed notifications still apply while the original request remains eligible.
+   Missing, hidden, changed, or closed recommendations allocate gifts
+   to the general ministry balance. Each code refers to the whole request, and
+   multiple donors may open checkout concurrently. Successful gifts accumulate
+   until they reach the saved estimate; only then does the whole request enter
+   fulfillment. Each gift records `allocated_cents`; `amount_cents - allocated_cents`
+   is its general-fund portion. Duplicate payments do not change the balance.
+   Requests with contributions cannot be edited, merged, or withdrawn by readers.
+   Requests without a shipping estimate cannot start checkout.
 3. For `NUXT_ZEFFY_CAMPAIGN_URL`, prefer the campaign's embed URL (Campaigns →
    ⋯ → Share → More ways to share → Embed → Campaign; the iframe `src`,
    `https://www.zeffy.com/embed/donation-form/…`). `/give` then shows the form
    inline, with only the payment fields and no church branding; a plain campaign
-   URL instead links out to Zeffy. The Zeffy/Stripe DBA must match the bank
-   account's name (Silicon Valley Reformed Baptist Church), not "Dorean Press";
-   the card statement descriptor is "Dorean Press". Receipts always carry the
-   church's legal name. Configure `NUXT_ZEFFY_CAMPAIGN_URL`, `NUXT_ZEFFY_CAMPAIGN_ID`, and
+   URL instead links out to Zeffy. Configure `NUXT_ZEFFY_CAMPAIGN_URL`, `NUXT_ZEFFY_CAMPAIGN_ID`, and
    `NUXT_ZEFFY_WEBHOOK_SECRET`. Subscribe to `payment.completed` at
    `https://doreanpress.org/api/zeffy/webhook`. The handler checks the raw-body
    HMAC, a five-minute timestamp tolerance, campaign, successful status, currency,
@@ -47,8 +62,8 @@ The homepage's pre-existing production “Coming Soon” gate remains in place.
    ```
 
    Never select an administrator automatically by email domain. The role is
-   checked on every request. Private details and copied tasks require a sign-in
-   within the last 15 minutes; the screen clears details after five minutes.
+   checked on every request. Private details and fulfillment changes require an active administrator session;
+   the screen clears details after five minutes.
    Claims are durable: an officer must review and reassign a stranded claim in
    the database before another administrator places an order.
 6. For automatic delivery updates, configure the EasyPost API key and a webhook
@@ -64,8 +79,11 @@ The homepage's pre-existing production “Coming Soon” gate remains in place.
    provider delivery cannot promise exactly once if the process dies immediately
    after sending. Terminal trackers are deleted after seven days; event history
    is retained locally for 90 days. Ensure outgoing email is configured.
-8. Confirm actual KDP print, postage, and tax costs before setting suggested
-   gifts. Admin
+8. US suggested gifts budget $9.41 for one copy, based on the supplied checkout:
+   $4.98 printing, $3.59 shipping, and $0.84 tax. Each additional copy remains a
+   provisional $7 including printing, shipping, and tax. International requests
+   need a separate estimate. Calibrate these amounts against actual KDP order
+   totals as they become available. Admin
    limits/costs are USD cents; non-USD purchases require an approved conversion.
 9. Configure and test the two Porkbun email forwards from the plan. This is a
     logged-in control-panel task, not part of the application deployment.
@@ -77,11 +95,15 @@ Hidden orders stay in the admin list and requester history. Public endpoints
 send `Cache-Control: no-store`; purge previously cached board/API content when
 releasing this change. Already downloaded public information cannot be recalled.
 
-Claim a funded task, save its marketplace, USD limit and payment-method label,
-and use the KDP Bookshelf to place an author-copy order. “Copy agent instructions”
-is a preview unless the authorization checkbox is selected. Record the Amazon
-order number and actual cost; only submitting a valid HTTPS tracking URL marks
-the task done. Delivery status is separate. Removing tracking reopens the task.
+Claim an order before purchasing; the admin list shows the claiming administrator’s
+email. Open it to view the books, recipient, and shipping address. Record the amount
+paid in USD (including shipping and tax) and the private Amazon order link. Saving
+those details marks it ordered and claims it if it was unclaimed. The link is only
+returned to administrators and is never placed in requester/donor views or emails.
+Add the separate tracking URL when it becomes available; that marks fulfillment
+complete. Removing tracking returns the order to the ordered queue. Purchase details
+can be corrected later without removing tracking. No spending-limit or Amazon order
+number fields are required in this workflow.
 
 A reader may detach an identity only while another remains. To remove the last
 identity they must withdraw open requests and contact the ministry to delete the

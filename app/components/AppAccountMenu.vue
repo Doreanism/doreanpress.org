@@ -17,22 +17,27 @@
 const { signedIn, known, signOut } = useSignedIn()
 const route = useRoute()
 const { identities } = useIdentityProof()
-const { data: gifts, refresh: refreshGifts } = await useGifts()
-const { data: orders, refresh: refreshOrders } = await useOrders()
+const request = useRequestFetch()
+const [
+  { data: gifts, refresh: refreshGifts },
+  { data: orders, refresh: refreshOrders },
+  { data: admin, refresh: refreshAdmin }
+] = await Promise.all([
+  useGifts(),
+  useOrders(),
+  useAsyncData('administrator', async () => {
+    if (!signedIn.value) return null
+    return await request('/api/admin/me').catch(() => null)
+  }, { watch: [signedIn] })
+])
 const open = ref(false)
 watch(open, (isOpen) => {
-  if (isOpen && signedIn.value) void Promise.all([refreshGifts(), refreshOrders()])
+  if (isOpen && signedIn.value) void Promise.all([refreshGifts(), refreshOrders(), refreshAdmin()])
 })
 const loginOpen = ref(false)
 watch(signedIn, (account) => {
   if (account) loginOpen.value = false
 })
-const request = useRequestFetch()
-const { data: admin } = await useAsyncData('administrator', async () => {
-  if (!signedIn.value) return null
-  // `useRequestFetch` so the server's render carries the reader's cookie.
-  return await request('/api/admin/me').catch(() => null)
-}, { watch: [signedIn] })
 
 async function onSignOut() {
   open.value = false
@@ -147,10 +152,9 @@ async function onSignOut() {
         />
 
         <UButton
-          v-if="admin"
-          to="/admin/fulfillment"
-          label="Fulfillment"
-          icon="i-lucide-clipboard-list"
+          to="/emails"
+          icon="i-lucide-mail"
+          label="Email addresses"
           color="neutral"
           variant="ghost"
           block
@@ -166,7 +170,7 @@ async function onSignOut() {
         <UButton
           to="/profiles"
           icon="i-lucide-at-sign"
-          label="Emails & profiles"
+          label="Social profiles"
           color="neutral"
           variant="ghost"
           block
@@ -187,6 +191,26 @@ async function onSignOut() {
             />
           </template>
         </UButton>
+
+        <section
+          v-if="admin"
+          aria-label="Admin"
+        >
+          <USeparator class="my-1" />
+          <p class="px-2 pt-1.5 pb-1 text-xs font-medium text-muted">
+            Admin
+          </p>
+          <UButton
+            to="/admin/fulfillment"
+            label="Order fulfillment"
+            icon="i-lucide-clipboard-list"
+            color="neutral"
+            variant="ghost"
+            block
+            class="justify-start"
+            @click="open = false"
+          />
+        </section>
 
         <USeparator class="my-1" />
 

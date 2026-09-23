@@ -7,6 +7,7 @@
 import { itemTitles, type RequestItem } from '#shared/catalog'
 import type { RequesterIdentity } from '#shared/identity'
 import type { BookRequest } from './requests'
+import { canEditRequestAddress } from './requestEditability'
 
 /** What you are shown about an order coming to you. */
 export interface MineView {
@@ -15,6 +16,7 @@ export interface MineView {
   items: RequestItem[]
   titles: string[]
   status: string
+  canEditAddress: boolean
   trackingUrl?: string
   deliveryStatus?: string
   createdAt: string
@@ -52,6 +54,7 @@ export function toMineView(r: BookRequest): MineView {
     items: r.items,
     titles: itemTitles(r.items),
     status: r.status,
+    canEditAddress: canEditRequestAddress(r),
     createdAt: r.createdAt,
     fulfilledAt: r.fulfilledAt,
     trackingUrl: r.fulfillment?.recipientTrackingUrl,

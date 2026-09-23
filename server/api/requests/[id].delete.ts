@@ -12,6 +12,7 @@ export default defineEventHandler(async (event) => {
   }
 
   await requireRequestOwner(event, request)
+  if ((request.fundedCents || 0) > 0) throw createError({ statusCode: 409, statusMessage: 'This request has received contributions and cannot be changed or withdrawn.' })
 
   if (request.status !== 'open') {
     throw createError({

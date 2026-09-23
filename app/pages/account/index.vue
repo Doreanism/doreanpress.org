@@ -97,8 +97,14 @@ async function authenticated() {
           icon="i-lucide-package"
         />
         <UButton
+          to="/emails"
+          label="Email addresses"
+          variant="subtle"
+          icon="i-lucide-mail"
+        />
+        <UButton
           to="/profiles"
-          label="Emails & profiles"
+          label="Social profiles"
           variant="subtle"
           icon="i-lucide-at-sign"
         />

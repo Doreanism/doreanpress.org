@@ -14,10 +14,13 @@ import { accountKey, primaryIdentity, type RequesterIdentity } from '#shared/ide
 export type RequestStatus = 'open' | 'fulfilled' | 'funded_awaiting_order' | 'ordered' | 'done' | 'cancelled' | 'needs_attention'
 
 export interface FulfillmentDetails {
+  shippedAt?: string
+  addressChangedAt?: string
   claimedBy?: string
   claimedAt?: string
   fundedAt?: string
   amazonOrderNumber?: string
+  privateOrderUrl?: string
   actualCents?: number
   maximumCents?: number
   estimatedDate?: string
@@ -75,6 +78,8 @@ export interface BookRequest {
   status: RequestStatus
   createdAt: string
   sponsorEmail?: string
+  fundingTargetCents?: number
+  fundedCents?: number
   fulfilledAt?: string
 }
 
@@ -91,6 +96,8 @@ export interface PublicBookRequest {
   message: string
   requesters: RequesterIdentity[]
   createdAt: string
+  fundingTargetCents?: number
+  fundedCents?: number
 }
 
 export function toPublic(r: BookRequest): PublicBookRequest {
@@ -99,7 +106,8 @@ export function toPublic(r: BookRequest): PublicBookRequest {
     items: r.items,
     message: r.message,
     requesters: r.requesters,
-    createdAt: r.createdAt
+    createdAt: r.createdAt,
+    fundingTargetCents: r.fundingTargetCents, fundedCents: r.fundedCents
   }
 }
 
@@ -204,7 +212,9 @@ export function ensureRequestsSchema() {
   if (!schema) {
     schema = (async () => {
       const sql = db()
-      await sql`
+      // One database round trip; statements still execute in order.
+      await sql.transaction([
+        sql`
         CREATE TABLE IF NOT EXISTS book_requests (
           id                text PRIMARY KEY,
           items             jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -220,19 +230,45 @@ export function ensureRequestsSchema() {
           sponsor_email     text,
           fulfilled_at      text
         )
-      `
+      `,
 
-      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS account_id text`
-      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS sponsor_account_id text`
-      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS hidden boolean NOT NULL DEFAULT false`
-      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS fulfillment jsonb NOT NULL DEFAULT '{}'::jsonb`
+        sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS account_id text`,
+        sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS sponsor_account_id text`,
+        sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS funding_target_cents integer`,
+        sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS funded_cents integer NOT NULL DEFAULT 0`,
+        sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS hidden boolean NOT NULL DEFAULT false`,
+        sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS fulfillment jsonb NOT NULL DEFAULT '{}'::jsonb`,
+        // The board is looked up by who asked and by who paid. Stripe checkout and
+        // Lulu printing were retired before launch with no real orders behind
+        // them, so what they left in older databases is dropped. One statement,
+        // because schema setup runs on each cold start and every query is a round
+        // trip; the column check matters because ALTER TABLE locks the table
+        // exclusively even when there is nothing left to drop.
+        sql`
+        DO $$
+        BEGIN
+          CREATE INDEX IF NOT EXISTS book_requests_email_idx ON book_requests (email);
+          CREATE INDEX IF NOT EXISTS book_requests_sponsor_email_idx ON book_requests (sponsor_email);
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'book_requests'
+              AND column_name IN ('stripe_session_id', 'lulu_job_id', 'shipping_status')
+          ) THEN
+            ALTER TABLE book_requests
+              DROP COLUMN IF EXISTS stripe_session_id,
+              DROP COLUMN IF EXISTS lulu_job_id,
+              DROP COLUMN IF EXISTS shipping_status;
+          END IF;
+          DROP TABLE IF EXISTS orders, processed_events;
+        END $$
+      `,
 
-      // Migration off the one-book-per-request schema. Tables created before
-      // requests became orders have `book_slug` instead of `items`; fold each
-      // legacy row into a single-line order. The old column is kept (nullable)
-      // rather than dropped so the change stays reversible.
-      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS items jsonb NOT NULL DEFAULT '[]'::jsonb`
-      await sql`
+        // Migration off the one-book-per-request schema. Tables created before
+        // requests became orders have `book_slug` instead of `items`; fold each
+        // legacy row into a single-line order. The old column is kept (nullable)
+        // rather than dropped so the change stays reversible.
+        sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS items jsonb NOT NULL DEFAULT '[]'::jsonb`,
+        sql`
         DO $$
         BEGIN
           IF EXISTS (
@@ -246,26 +282,27 @@ export function ensureRequestsSchema() {
              WHERE items = '[]'::jsonb AND book_slug IS NOT NULL;
           END IF;
         END $$
-      `
+      `,
 
-      // Verified identity, added later. All three columns are nullable: rows
-      // posted before it was required keep no account and show as unverified
-      // rather than being deleted or silently attributed to someone.
-      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS requester jsonb`
-      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS account_key text`
-      // A request carries a *set* of accounts. `requester` is kept beside the
-      // set and holds the primary one, so a row written now still reads
-      // correctly to anything that only knows about the single-account shape —
-      // and so rows written before this column existed need no backfill: see
-      // `requestersFrom`, which falls back to it.
-      await sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS requesters jsonb`
-      // `account_key` is derived from the primary account on every write; it
-      // exists as its own column purely so "does this account already have a
-      // request open?" is an index lookup rather than a scan over jsonb.
-      await sql`
+        // Verified identity, added later. All three columns are nullable: rows
+        // posted before it was required keep no account and show as unverified
+        // rather than being deleted or silently attributed to someone.
+        sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS requester jsonb`,
+        sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS account_key text`,
+        // A request carries a *set* of accounts. `requester` is kept beside the
+        // set and holds the primary one, so a row written now still reads
+        // correctly to anything that only knows about the single-account shape —
+        // and so rows written before this column existed need no backfill: see
+        // `requestersFrom`, which falls back to it.
+        sql`ALTER TABLE book_requests ADD COLUMN IF NOT EXISTS requesters jsonb`,
+        // `account_key` is derived from the primary account on every write; it
+        // exists as its own column purely so "does this account already have a
+        // request open?" is an index lookup rather than a scan over jsonb.
+        sql`
         CREATE INDEX IF NOT EXISTS book_requests_account_open_idx
           ON book_requests (account_key, status)
       `
+      ])
     })().catch((err) => {
       schema = null
       throw err
@@ -314,7 +351,7 @@ function requestersFrom(r: Record<string, unknown>): RequesterIdentity[] {
   })
 }
 
-function fromRow(r: Record<string, unknown>): BookRequest {
+export function requestFromRow(r: Record<string, unknown>): BookRequest {
   return {
     id: r.id as string,
     accountId: (r.account_id as string) || undefined,
@@ -331,6 +368,8 @@ function fromRow(r: Record<string, unknown>): BookRequest {
     status: r.status as RequestStatus,
     createdAt: r.created_at as string,
     sponsorEmail: (r.sponsor_email as string) ?? undefined,
+    fundingTargetCents: (r.funding_target_cents as number) ?? undefined,
+    fundedCents: (r.funded_cents as number) ?? 0,
     fulfilledAt: (r.fulfilled_at as string) ?? undefined
   }
 }
@@ -385,7 +424,7 @@ export async function createRequest(input: CreateRequestInput): Promise<BookRequ
 export async function getRequest(id: string): Promise<BookRequest | null> {
   await ensureRequestsSchema()
   const rows = await db()`SELECT * FROM book_requests WHERE id = ${id}`
-  return rows[0] ? fromRow(rows[0]) : null
+  return rows[0] ? requestFromRow(rows[0]) : null
 }
 
 /**
@@ -402,17 +441,19 @@ export async function listRequestsForEmail(email: string): Promise<BookRequest[]
     SELECT * FROM book_requests WHERE lower(email) = ${normalizeEmail(email)}
     ORDER BY created_at DESC
   `
-  return rows.map(fromRow)
+  return rows.map(requestFromRow)
 }
 
 /** Everything this address paid for on someone else's behalf, newest first. */
 export async function listRequestsSponsoredBy(email: string, accountId?: string): Promise<BookRequest[]> {
-  await ensureRequestsSchema()
+  await ensureMinistrySchema()
   const rows = await db()`
     SELECT * FROM book_requests WHERE sponsor_account_id = ${accountId || null} OR (sponsor_account_id IS NULL AND lower(sponsor_email) = ${normalizeEmail(email)})
+      OR EXISTS (SELECT 1 FROM ministry_gifts g WHERE g.request_id = book_requests.id
+        AND g.allocation = 'request' AND lower(g.donor_email) = ${normalizeEmail(email)})
     ORDER BY created_at DESC
   `
-  return rows.map(fromRow)
+  return rows.map(requestFromRow)
 }
 
 export async function listOpenRequests(): Promise<BookRequest[]> {
@@ -420,7 +461,7 @@ export async function listOpenRequests(): Promise<BookRequest[]> {
   const rows = await db()`
     SELECT * FROM book_requests WHERE status = 'open' ORDER BY created_at DESC
   `
-  return rows.map(fromRow)
+  return rows.map(requestFromRow)
 }
 
 /**
@@ -481,9 +522,10 @@ export async function updateRequest(id: string, patch: Partial<BookRequest>, exp
     items = ${JSON.stringify(next.items)}::jsonb, message = ${next.message}, name = ${next.name},
     email = ${next.email}, phone = ${next.phone}, address = ${JSON.stringify(next.address)}::jsonb
     WHERE id = ${id} AND status = ${current.status} AND items = ${JSON.stringify(current.items)}::jsonb
+      AND funded_cents = 0
       AND message = ${current.message} AND address = ${JSON.stringify(current.address)}::jsonb
     RETURNING *`
-  return rows[0] ? fromRow(rows[0]) : null
+  return rows[0] ? requestFromRow(rows[0]) : null
 }
 
 /**
@@ -522,7 +564,7 @@ export async function fulfilItems(
 
 export async function deleteRequest(id: string): Promise<void> {
   await ensureRequestsSchema()
-  const rows = await db()`UPDATE book_requests SET status = 'cancelled' WHERE id = ${id} AND status = 'open' RETURNING id`
+  const rows = await db()`UPDATE book_requests SET status = 'cancelled' WHERE id = ${id} AND status = 'open' AND funded_cents = 0 RETURNING id`
   if (!rows.length) throw createError({ statusCode: 409, statusMessage: 'This request is no longer open.' })
 }
 
@@ -535,5 +577,5 @@ export async function listRequestsForOwner(email: string | undefined, keys: stri
     OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(r.requesters, CASE WHEN r.requester IS NOT NULL THEN jsonb_build_array(r.requester) ELSE '[]'::jsonb END)) AS identity
       WHERE (identity->>'provider') || ':' || (identity->>'subject') = ANY(${keys}::text[]))
     ORDER BY created_at DESC`
-  return rows.map(fromRow)
+  return rows.map(requestFromRow)
 }

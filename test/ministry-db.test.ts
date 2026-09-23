@@ -14,7 +14,7 @@ describe.skipIf(!enabled)('ministry database transactions', () => {
   let zeffy: typeof import('../server/utils/zeffy')
   let accounts: typeof import('../server/utils/readerAccounts')
   let adminHandler: (event: unknown) => Promise<unknown>
-  const config = { zeffy: { campaignId: 'campaign', recommendationQuestion: 'Code' }, public: { siteUrl: 'https://example.test' }, easypost: { apiKey: '' } }
+  const config = { zeffy: { campaignId: 'campaign', recommendationQuestion: 'Code' }, giftEstimate: { firstCopyCents: 1200, additionalCopyCents: 700 }, public: { siteUrl: 'https://example.test' }, easypost: { apiKey: '' } }
 
   beforeAll(async () => {
     const endpoint = process.env.NEON_LOCAL_PROXY_ENDPOINT || ''
@@ -80,21 +80,53 @@ describe.skipIf(!enabled)('ministry database transactions', () => {
     const notices = await sql`SELECT id FROM ministry_outbox WHERE id IN (${`gift:${payment.data.id}`}, ${`task:${r.id}`})`
     expect(notices).toHaveLength(2)
   })
-  it('splits a partial gift atomically and leaves only unfunded copies open', async () => {
+  it('pools smaller gifts across codes and funds the whole request at the exact target', async () => {
+    const r = await request()
+    const a = gift(await reserve(r.id))
+    a.data.amount = 500
+    const b = gift(await reserve(r.id))
+    b.data.amount = 400
+    const c = gift(await reserve(r.id))
+    c.data.amount = 300
+    await zeffy.recordZeffyGift(a)
+    await zeffy.recordZeffyGift(a)
+    expect(await requests.getRequest(r.id)).toMatchObject({ status: 'open', fundedCents: 500, fundingTargetCents: 1200 })
+    await zeffy.recordZeffyGift(b)
+    expect(await requests.getRequest(r.id)).toMatchObject({ status: 'open', fundedCents: 900 })
+    expect(await sql`SELECT id FROM ministry_outbox WHERE id = ${'task:' + r.id}`).toHaveLength(0)
+    await zeffy.recordZeffyGift(c)
+    expect(await requests.getRequest(r.id)).toMatchObject({ status: 'funded_awaiting_order', fundedCents: 1200 })
+    expect(await sql`SELECT id FROM ministry_outbox WHERE id = ${'task:' + r.id}`).toHaveLength(1)
+  })
+  it('counts concurrent contributions once and allocates only the remaining cost', async () => {
+    const r = await request()
+    const a = gift(await reserve(r.id))
+    const b = gift(await reserve(r.id))
+    a.data.amount = 800
+    b.data.amount = 800
+    await Promise.all([zeffy.recordZeffyGift(a), zeffy.recordZeffyGift(b), zeffy.recordZeffyGift(a)])
+    expect(await requests.getRequest(r.id)).toMatchObject({ status: 'funded_awaiting_order', fundedCents: 1200 })
+    const [totals] = await sql`SELECT sum(amount_cents)::integer AS total, sum(allocated_cents)::integer AS allocated
+      FROM ministry_gifts WHERE request_id = ${r.id}`
+    expect(totals).toEqual({ total: 1600, allocated: 1200 })
+  })
+  it('does not split an older code’s selection or fund a three-copy request too early', async () => {
     const r = await request()
     const all = [{ slug: 'the-doctrine-of-simony', quantity: 3 }]
-    const chosen = [{ slug: 'the-doctrine-of-simony', quantity: 1 }]
-    await sql`UPDATE book_requests SET items = ${JSON.stringify(all)}::jsonb, message = 'partial-test' WHERE id = ${r.id}`
+    await sql`UPDATE book_requests SET items = ${JSON.stringify(all)}::jsonb WHERE id = ${r.id}`
     const token = await reserve(r.id)
-    await sql`UPDATE gift_reservations SET original_items = items, items = ${JSON.stringify(chosen)}::jsonb WHERE id = ${token}`
-    const payment = gift(token)
+    await sql`UPDATE gift_reservations SET original_items = items, items = '[{"slug":"the-doctrine-of-simony","quantity":1}]'::jsonb WHERE id = ${token}`
+    await zeffy.recordZeffyGift(gift(token))
+    expect(await requests.getRequest(r.id)).toMatchObject({ status: 'open', items: all, fundedCents: 2500, fundingTargetCents: 2600 })
+  })
+  it('preserves contributions against edits and withdrawal', async () => {
+    const r = await request()
+    const payment = gift(await reserve(r.id))
+    payment.data.amount = 500
     await zeffy.recordZeffyGift(payment)
-    await zeffy.recordZeffyGift(payment)
-    const rows = await sql`SELECT status, items FROM book_requests WHERE message = 'partial-test' ORDER BY status`
-    expect(rows).toEqual([
-      { status: 'funded_awaiting_order', items: chosen },
-      { status: 'open', items: [{ slug: 'the-doctrine-of-simony', quantity: 2 }] }
-    ])
+    expect(await requests.updateRequest(r.id, { items: [{ slug: 'the-doctrine-of-simony', quantity: 2 }] })).toBeNull()
+    await expect(requests.deleteRequest(r.id)).rejects.toMatchObject({ statusCode: 409 })
+    expect((await requests.listRequestsSponsoredBy('donor@example.test')).some(row => row.id === r.id)).toBe(true)
   })
   it('hides listings and direct public links while retaining owner access', async () => {
     const r = await request()
@@ -118,13 +150,21 @@ describe.skipIf(!enabled)('ministry database transactions', () => {
     const rows = await sql`SELECT allocation FROM ministry_gifts WHERE payment_id IN (${a.data.id}, ${b.data.id})`
     expect(rows.map(r => r.allocation).sort()).toEqual(['general', 'request'])
   })
-  it('keeps gifts for hidden, withdrawn, expired, and missing recommendations in the general balance', async () => {
-    for (const state of ['hidden', 'withdrawn', 'expired', 'missing']) {
+  it('accepts a delayed payment after the browsing reservation was released', async () => {
+    const r = await request()
+    const token = await reserve(r.id)
+    await sql`UPDATE gift_reservations SET expires_at = now() - interval '1 minute' WHERE id = ${token}`
+    const payment = gift(token)
+    await zeffy.recordZeffyGift(payment)
+    expect((await requests.getRequest(r.id))?.status).toBe('funded_awaiting_order')
+    expect((await sql`SELECT allocation FROM ministry_gifts WHERE payment_id = ${payment.data.id}`)[0]!.allocation).toBe('request')
+  })
+  it('keeps gifts for hidden, withdrawn, and missing recommendations in the general balance', async () => {
+    for (const state of ['hidden', 'withdrawn', 'missing']) {
       const r = await request()
       const token = await reserve(r.id)
       if (state === 'hidden') await sql`UPDATE book_requests SET hidden = true WHERE id = ${r.id}`
       if (state === 'withdrawn') await requests.deleteRequest(r.id)
-      if (state === 'expired') await sql`UPDATE gift_reservations SET expires_at = now() - interval '1 minute' WHERE id = ${token}`
       const payment = gift(state === 'missing' ? '' : token)
       await zeffy.recordZeffyGift(payment)
       expect((await sql`SELECT allocation FROM ministry_gifts WHERE payment_id = ${payment.data.id}`)[0]!.allocation).toBe('general')
@@ -205,6 +245,71 @@ describe.skipIf(!enabled)('ministry database transactions', () => {
     expect(await requests.updateRequest(r.id, { items: r.items })).toBeNull()
     expect((await requests.getRequest(r.id))?.items).toEqual(increased)
   })
+  async function addressPair() {
+    const accountId = crypto.randomUUID()
+    const input = { accountId, items: [{ slug: 'the-doctrine-of-simony', quantity: 1 }], message: 'Source message', requesters: [], name: 'Reader', email: 'reader@example.test', phone: '', address: { line1: 'First street', city: 'Town', postalCode: '10000', country: 'US' } }
+    const source = await requests.createRequest(input)
+    const target = await requests.createRequest({ ...input, message: 'Target message', address: { ...input.address, line1: 'Other street' } })
+    return { source, target, accountId }
+  }
+  it('merges addresses atomically, preserving quantities and messages without duplicate rows', async () => {
+    const { planAddressEdit, saveAddressEdit } = await import('../server/utils/requestAddressEditing')
+    const { source, target, accountId } = await addressPair()
+    const plan = planAddressEdit(source, [source, target], accountId, { originalDestination: source, targetRequestId: target.id })
+    expect(await saveAddressEdit(plan, accountId)).toEqual({ id: target.id, merged: true })
+    expect(await requests.getRequest(source.id)).toBeNull()
+    expect(await requests.getRequest(target.id)).toMatchObject({ items: [{ slug: 'the-doctrine-of-simony', quantity: 2 }], message: 'Target message\n\nSource message', address: target.address })
+  })
+  it('rejects stale and simultaneous merges without losing or doubling quantities', async () => {
+    const { planAddressEdit, saveAddressEdit } = await import('../server/utils/requestAddressEditing')
+    const { source, target, accountId } = await addressPair()
+    const plan = planAddressEdit(source, [source, target], accountId, { originalDestination: source, targetRequestId: target.id })
+    const results = await Promise.allSettled([saveAddressEdit(plan, accountId), saveAddressEdit(plan, accountId)])
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.find(result => result.status === 'rejected')).toMatchObject({ reason: { statusCode: 409 } })
+    expect((await requests.getRequest(target.id))?.items[0]?.quantity).toBe(2)
+  })
+  it('does not merge during checkout, or after either order changes or gets funded', async () => {
+    const { planAddressEdit, saveAddressEdit } = await import('../server/utils/requestAddressEditing')
+    for (const which of ['source', 'target'] as const) {
+      for (const change of ['reservation', 'edit', 'funding']) {
+        const pair = await addressPair()
+        const { source, target, accountId } = pair
+        const plan = planAddressEdit(source, [source, target], accountId, { originalDestination: source, targetRequestId: target.id })
+        if (change === 'reservation') await reserve(pair[which].id)
+        if (change === 'edit') await requests.updateRequest(pair[which].id, { message: 'New message' })
+        if (change === 'funding') await sql`UPDATE book_requests SET status = 'funded_awaiting_order' WHERE id = ${pair[which].id}`
+        await expect(saveAddressEdit(plan, accountId)).rejects.toMatchObject({ statusCode: 409 })
+        expect((await requests.getRequest(source.id))?.items).toEqual(source.items)
+        expect((await requests.getRequest(target.id))?.items).toEqual(target.items)
+      }
+    }
+  })
+  it('updates to a funded order’s address without merging or modifying the funded order', async () => {
+    const { planAddressEdit, saveAddressEdit } = await import('../server/utils/requestAddressEditing')
+    const { source, target, accountId } = await addressPair()
+    await sql`UPDATE book_requests SET status = 'ordered' WHERE id = ${target.id}`
+    const funded = (await requests.getRequest(target.id))!
+    const plan = planAddressEdit(source, [source, funded], accountId, { originalDestination: source, targetRequestId: target.id })
+    expect(await saveAddressEdit(plan, accountId)).toEqual({ id: source.id, merged: false })
+    expect((await requests.getRequest(source.id))?.address).toEqual(target.address)
+    expect(await requests.getRequest(target.id)).toEqual(funded)
+  })
+  it('allows a funded address update but rejects an edit if shipping starts before saving', async () => {
+    const { planAddressEdit, saveAddressEdit } = await import('../server/utils/requestAddressEditing')
+    const { source, target, accountId } = await addressPair()
+    await sql`UPDATE book_requests SET status = 'funded_awaiting_order' WHERE id = ${source.id}`
+    const funded = (await requests.getRequest(source.id))!
+    const plan = planAddressEdit(funded, [funded, target], accountId, { originalDestination: funded, targetRequestId: target.id })
+    expect(await saveAddressEdit(plan, accountId)).toEqual({ id: source.id, merged: false })
+    expect(await requests.getRequest(source.id)).toMatchObject({ status: 'funded_awaiting_order', items: source.items, address: target.address })
+    expect(await requests.getRequest(target.id)).toMatchObject({ items: target.items, status: 'open' })
+    const latest = (await requests.getRequest(source.id))!
+    const stale = planAddressEdit(latest, [latest], accountId, { originalDestination: latest, name: source.name, address: source.address })
+    await sql`UPDATE book_requests SET fulfillment = fulfillment || '{"deliveryStatus":"in_transit","shippedAt":"2026-09-22"}'::jsonb WHERE id = ${source.id}`
+    await expect(saveAddressEdit(stale, accountId)).rejects.toMatchObject({ statusCode: 409 })
+    expect((await requests.getRequest(source.id))?.address).toEqual(target.address)
+  })
   it('two simultaneous detach requests leave one identity', async () => {
     await sql`INSERT INTO reader_accounts(id, created_at, updated_at) VALUES ('reader', 'now', 'now')`
     for (const subject of ['one', 'two']) await sql`INSERT INTO reader_identities(account_id, provider, subject, identity, attached_at, last_verified_at)
@@ -213,5 +318,34 @@ describe.skipIf(!enabled)('ministry database transactions', () => {
     expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1)
     expect((await sql`SELECT subject FROM reader_identities WHERE account_id = 'reader'`)).toHaveLength(1)
     expect(results.find(r => r.status === 'rejected')).toMatchObject({ reason: { statusCode: 409, statusMessage: 'LAST_IDENTITY' } })
+  })
+  it('lets an administrator save tracking directly without claiming or recording an Amazon order', async () => {
+    const r = await request()
+    await zeffy.recordZeffyGift(gift(await reserve(r.id)))
+    const getDetail = (await import('../server/api/admin/fulfillment/[id].get')).default
+    expect(await getDetail({ accountId: 'admin-b', id: r.id } as never)).toMatchObject({ fundedCents: 1200 })
+    await adminHandler({ accountId: 'admin-b', id: r.id, body: { action: 'cost', actualCents: 1350 } })
+    expect(await requests.getRequest(r.id)).toMatchObject({ status: 'funded_awaiting_order', fulfillment: { actualCents: 1350 } })
+    await adminHandler({ accountId: 'admin-b', id: r.id, body: {
+      action: 'tracking', trackingUrl: 'https://www.ups.com/track?tracknum=1Z123456789'
+    } })
+    expect(await requests.getRequest(r.id)).toMatchObject({ status: 'done', fulfillment: { trackingSubmittedBy: 'admin-b', actualCents: 1350 } })
+    await adminHandler({ accountId: 'admin-b', id: r.id, body: { action: 'tracking', trackingUrl: '' } })
+    expect((await requests.getRequest(r.id))?.status).toBe('funded_awaiting_order')
+  })
+  it('shows the claiming admin email and saves the purchase before tracking', async () => {
+    await sql`INSERT INTO reader_accounts(id, email, created_at, updated_at) VALUES ('purchase-admin', 'admin@example.test', 'now', 'now')`
+    await sql`INSERT INTO account_roles(account_id, role, granted_by) VALUES ('purchase-admin', 'fulfillment_admin', 'test')`
+    const r = await request()
+    await zeffy.recordZeffyGift(gift(await reserve(r.id)))
+    await adminHandler({ accountId: 'purchase-admin', id: r.id, body: { action: 'claim' } })
+    vi.stubGlobal('getQuery', () => ({ status: 'pending' }))
+    const list = (await import('../server/api/admin/fulfillment/index.get')).default
+    expect((await list({ accountId: 'purchase-admin' } as never)).find(row => row.id === r.id)).toMatchObject({ claimedEmail: 'admin@example.test' })
+    const privateOrderUrl = 'https://www.amazon.com/gp/your-account/order-details?orderID=123-1234567-1234567'
+    await adminHandler({ accountId: 'purchase-admin', id: r.id, body: { action: 'purchase', actualCents: 941, privateOrderUrl } })
+    expect(await requests.getRequest(r.id)).toMatchObject({ status: 'ordered', fulfillment: { actualCents: 941, privateOrderUrl } })
+    const emails = await sql`SELECT body FROM ministry_outbox WHERE recipient = 'reader@example.test'`
+    expect(JSON.stringify(emails)).not.toContain(privateOrderUrl)
   })
 })

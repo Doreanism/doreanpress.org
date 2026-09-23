@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 320) {
     throw createError({ statusCode: 422, statusMessage: 'Please enter an email address.' })
   }
-  const token = await issueLoginLink(email, '/profiles', account.accountId)
+  const token = await issueLoginLink(email, '/emails', account.accountId)
   if (token) {
     const origin = loginOrigin(getRequestURL(event).href, useRuntimeConfig(event).public.siteUrl, Boolean(import.meta.dev))
     const url = `${origin}/account/confirm#token=${token}`

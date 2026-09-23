@@ -49,8 +49,8 @@ describe('editing requested quantities', () => {
     await expect(edit()).rejects.toMatchObject({ statusCode: 403 })
     expect(update).not.toHaveBeenCalled()
   })
-  it('rejects funded requests', async () => {
-    vi.stubGlobal('getRequest', async () => ({ ...request, status: 'funded_awaiting_order' }))
+  it.each(['fulfilled', 'funded_awaiting_order', 'ordered', 'done', 'needs_attention', 'cancelled'])('rejects item edits for %s requests', async (status) => {
+    vi.stubGlobal('getRequest', async () => ({ ...request, status }))
     await expect(edit()).rejects.toMatchObject({ statusCode: 409 })
     expect(update).not.toHaveBeenCalled()
   })

@@ -15,14 +15,83 @@ useSeoMeta({
 const route = useRoute()
 const toast = useToast()
 const sponsoringId = ref<string | null>(null)
-const handoff = ref<{ url: string, embed: boolean, recommendation: string, question: string } | null>(null)
+const handoff = ref<{ url: string, embed: boolean, recommendation: string, question: string, items: RequestItem[], estimatedCents: number | null, targetCents: number, fundedCents: number, expiresAt: string, resumed: boolean } | null>(null)
+const money = (cents: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
+const giftAmount = computed(() => handoff.value?.estimatedCents == null ? 'Estimate unavailable' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((handoff.value?.estimatedCents || 0) / 100))
+const giftRequestId = ref<string | null>(null)
+const reservationEnded = ref(false)
+const renewalFailed = ref(false)
+let renewing = false
+let heartbeat: ReturnType<typeof setInterval> | undefined
+let leaving = false
 
-async function copyRecommendation(code: string) {
+function releaseGift() {
+  leaving = true
+  clearInterval(heartbeat)
+  if (!handoff.value || !giftRequestId.value || reservationEnded.value) return
+  const url = `/api/requests/${giftRequestId.value}/release`
+  const body = JSON.stringify({ recommendation: handoff.value.recommendation })
+  // Unlike ordinary requests, beacons can finish after a tab closes. A crashed
+  // browser still releases its hold through the normal reservation expiry.
+  const queued = navigator.sendBeacon?.(url, new Blob([body], { type: 'application/json' }))
+  if (!queued) {
+    void fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {})
+  }
+}
+
+function restoreGiftPage() {
+  leaving = false
+  clearInterval(heartbeat)
+  heartbeat = setInterval(keepGiftAlive, 45_000)
+  void keepGiftAlive()
+}
+
+async function keepGiftAlive() {
+  const current = handoff.value
+  const id = giftRequestId.value
+  if (!current || !id || reservationEnded.value || renewing || leaving) return
+  renewing = true
   try {
-    await navigator.clipboard.writeText(code)
-    toast.add({ title: 'Code copied', icon: 'i-lucide-copy', color: 'primary' })
+    const result = await $fetch(`/api/requests/${id}/keep-alive`, {
+      method: 'POST', body: { recommendation: current.recommendation }
+    })
+    if (handoff.value !== current) return
+    current.expiresAt = result.expiresAt
+    if (result.targetCents !== null) {
+      current.targetCents = result.targetCents
+      current.fundedCents = result.fundedCents
+      current.estimatedCents = Math.max(0, result.targetCents - result.fundedCents)
+    }
+    renewalFailed.value = false
+  } catch (err) {
+    if (handoff.value !== current) return
+    const status = (err as { statusCode?: number }).statusCode
+    reservationEnded.value = status === 403 || status === 409 || Date.now() >= Date.parse(current.expiresAt)
+    renewalFailed.value = true
+  } finally {
+    renewing = false
+  }
+}
+
+onMounted(() => {
+  heartbeat = setInterval(keepGiftAlive, 45_000)
+  window.addEventListener('focus', keepGiftAlive)
+  window.addEventListener('pagehide', releaseGift)
+  window.addEventListener('pageshow', restoreGiftPage)
+})
+onBeforeUnmount(() => {
+  releaseGift()
+  window.removeEventListener('focus', keepGiftAlive)
+  window.removeEventListener('pagehide', releaseGift)
+  window.removeEventListener('pageshow', restoreGiftPage)
+})
+
+async function copyGiftValue(value: string, label: string) {
+  try {
+    await navigator.clipboard.writeText(value)
+    toast.add({ title: `${label} copied`, icon: 'i-lucide-copy', color: 'primary' })
   } catch {
-    toast.add({ title: 'Select the code and copy it', color: 'neutral' })
+    toast.add({ title: `Select the ${label.toLowerCase()} and copy it`, color: 'neutral' })
   }
 }
 
@@ -86,25 +155,26 @@ function isSponsorable(items: RequestItem[]) {
   return linesFor(items).length > 0
 }
 
-const picks = reactive<Record<string, RequestItem[]>>({})
-watch(requests, (list) => {
-  for (const req of list || []) picks[req.id] ??= req.items.map(item => ({ ...item }))
-}, { immediate: true })
-
 async function sponsor(id: string) {
   sponsoringId.value = id
   try {
-    handoff.value = await $fetch(`/api/requests/${id}/sponsor`, { method: 'POST', body: { items: picks[id] } })
+    handoff.value = await $fetch(`/api/requests/${id}/sponsor`, { method: 'POST' })
+    giftRequestId.value = id
+    reservationEnded.value = false
+    renewalFailed.value = false
+    await keepGiftAlive()
+    await nextTick()
+    document.getElementById('gift-checkout')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
     sponsoringId.value = null
   } catch (err) {
     const message = (err as { data?: { statusMessage?: string } })?.data?.statusMessage || 'Could not start checkout.'
-    toast.add({ title: 'Sponsorship failed', description: message, icon: 'i-lucide-triangle-alert', color: 'error' })
+    toast.add({ title: 'Could not open the gift form', description: message, icon: 'i-lucide-triangle-alert', color: 'error' })
     sponsoringId.value = null
     refresh()
   }
 }
 
-// Confirm removal here when the attached profiles establish ownership.
+// Show request management when the attached profiles establish ownership.
 const { identities } = useIdentityProof()
 function isMine(req: PublicBookRequest) {
   return sharesAccount(identities.value, req.requesters)
@@ -132,25 +202,94 @@ function formatDate(iso: string) {
 
     <div
       v-if="handoff"
-      class="mt-6 rounded-lg ring ring-default p-5 space-y-3"
+      id="gift-checkout"
+      class="mt-6 scroll-mt-24 rounded-lg ring ring-default p-5 space-y-3"
     >
-      <h2 class="font-semibold">
-        Your recommendation
-      </h2>
-      <p>
-        Copy this code into the “{{ handoff.question }}” field of the gift form: <strong class="break-all">{{ handoff.recommendation }}</strong>
-        <UButton
-          aria-label="Copy recommendation code"
-          icon="i-lucide-copy"
-          color="neutral"
-          variant="ghost"
-          size="sm"
-          @click="copyRecommendation(handoff.recommendation)"
-        />
+      <div class="space-y-3 border-b border-default pb-5">
+        <h2 class="font-semibold">
+          Books for this request code
+        </h2>
+        <RequestBooks :items="handoff.items" />
+        <p class="text-sm text-muted">
+          {{ itemsCopies(handoff.items) }} {{ itemsCopies(handoff.items) === 1 ? 'copy' : 'copies' }} total
+        </p>
+      </div>
+      <p class="text-sm text-muted">
+        Copy these values into the gift form below.
       </p>
-      <p>This request is reserved for 30 minutes. A late gift, or a gift without this code, goes to the general Give a Book balance.</p>
-      <p>Gifts are processed by Zeffy for Lakewood Village Baptist Church, whose name appears on your receipt. Zeffy’s own contribution is optional and may be set to zero. No goods or services are provided to you in return for your gift.</p>
-      <template v-if="handoff.embed">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="rounded-lg bg-primary/10 p-5 ring ring-primary/25">
+          <p class="text-sm font-medium">
+            Request code
+          </p>
+          <div class="mt-2 flex items-center justify-between gap-3">
+            <strong class="break-all font-mono text-2xl tracking-wide">{{ handoff.recommendation }}</strong>
+            <UButton
+              aria-label="Copy request code"
+              icon="i-lucide-copy"
+              color="primary"
+              variant="soft"
+              @click="copyGiftValue(handoff.recommendation, 'Request code')"
+            />
+          </div>
+          <p class="mt-2 text-xs text-muted">
+            Enter in “{{ handoff.question }}”.
+          </p>
+        </div>
+        <div class="rounded-lg bg-primary/10 p-5 ring ring-primary/25">
+          <p class="text-sm font-medium">
+            Amount still needed
+          </p>
+          <div class="mt-2 flex items-center justify-between gap-3">
+            <strong class="text-3xl tabular-nums">{{ giftAmount }}</strong>
+            <UButton
+              v-if="handoff.estimatedCents !== null"
+              aria-label="Copy suggested gift amount"
+              icon="i-lucide-copy"
+              color="primary"
+              variant="soft"
+              @click="copyGiftValue((handoff.estimatedCents / 100).toFixed(2), 'Amount')"
+            />
+          </div>
+          <p
+            v-if="handoff.estimatedCents !== null"
+            class="mt-2 text-xs text-muted"
+          >
+            Estimated printing, shipping, and tax · USD
+          </p>
+          <p
+            v-else
+            class="mt-2 text-xs text-muted"
+          >
+            International shipping requires a separate estimate.
+          </p>
+        </div>
+      </div>
+      <p
+        v-if="reservationEnded"
+        role="status"
+      >
+        This reservation has ended or the request is no longer available. If you already completed your gift, please wait for confirmation. Otherwise, select “Gift these books” again to start a new reservation if the request is still available.
+      </p>
+      <p
+        v-else-if="renewalFailed"
+        role="status"
+      >
+        We couldn’t keep your reservation active. We’ll retry automatically. Your current reservation expires at {{ new Date(handoff.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }}.
+      </p>
+      <p class="text-sm text-muted">
+        {{ money(handoff.fundedCents) }} of {{ money(handoff.targetCents) }} funded. Give any amount toward this request. We order once it is fully funded; any excess goes to the general fund.
+      </p>
+      <p class="text-sm text-muted">
+        A gift without the code goes to the general fund.
+      </p>
+      <p class="text-xs leading-relaxed text-muted">
+        Gifts to Dorean Press are processed through Zeffy. The official organization processing donations is “Lakewood Village Baptist Church,” so you’ll see that name on the form. See our <ULink
+          to="/terms"
+          class="text-primary"
+        >terms</ULink>. Zeffy’s own contribution is optional and may be set to zero. No goods or services are provided to you in return for your gift.
+      </p>
+      <template v-if="!reservationEnded && handoff.embed">
         <!-- Zeffy's embed shows only the payment fields, so the form reads as part of this page. -->
         <div class="relative h-[1200px] w-full overflow-hidden rounded-lg">
           <iframe
@@ -171,7 +310,7 @@ function formatDate(iso: string) {
         </p>
       </template>
       <UButton
-        v-else
+        v-else-if="!reservationEnded"
         :to="handoff.url"
         target="_blank"
         label="Continue to Zeffy"
@@ -210,12 +349,13 @@ function formatDate(iso: string) {
         <RequesterBadge :requesters="req.requesters" />
 
         <div class="flex flex-col gap-3">
-          <RequestBooks
-            :items="req.items"
-            :model-value="picks[req.id] || req.items"
-            selectable
-            @update:model-value="(items: RequestItem[]) => picks[req.id] = items"
-          />
+          <RequestBooks :items="req.items" />
+          <p
+            v-if="req.fundingTargetCents"
+            class="text-sm text-muted"
+          >
+            {{ money(req.fundedCents || 0) }} of {{ money(req.fundingTargetCents) }} funded · {{ money(req.fundingTargetCents - (req.fundedCents || 0)) }} still needed
+          </p>
 
           <p class="text-xs text-dimmed">
             Requested {{ formatDate(req.createdAt) }}
@@ -237,7 +377,7 @@ function formatDate(iso: string) {
             color="primary"
             block
             :loading="sponsoringId === req.id"
-            :disabled="!isSponsorable(req.items) || picks[req.id]?.length === 0"
+            :disabled="!isSponsorable(req.items)"
             @click="sponsor(req.id)"
           />
           <div class="flex items-center justify-end gap-1">
@@ -250,6 +390,16 @@ function formatDate(iso: string) {
               variant="ghost"
               size="sm"
               @click="copyRequestLink(req.id)"
+            />
+            <UButton
+              v-if="isMine(req)"
+              :to="{ path: '/orders', hash: `#${requestAnchor(req.id)}` }"
+              aria-label="Edit my request"
+              title="Edit my request"
+              icon="i-lucide-pencil"
+              color="neutral"
+              variant="ghost"
+              size="sm"
             />
             <RequestRemoveButton
               v-if="isMine(req)"

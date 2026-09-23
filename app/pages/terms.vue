@@ -58,6 +58,9 @@ const updated = 'September 2026'
           You may point us to a request you would like us to fill next. That is a recommendation, not a gift legally set aside for one person. The church keeps control of the funds and decides how to use them for the ministry. If the request closes, costs less than expected, or cannot be filled, we will use the money for another Give a Book request or another expense of the same ministry.
         </p>
         <p>
+          Gifts toward the same request are combined. We queue the whole request for ordering when contributions reach its estimated cost; any excess goes to the general fund.
+        </p>
+        <p>
           Zeffy may invite you to add an optional contribution to Zeffy itself. That amount does not come to us, and you may set it to zero.
         </p>
         <p>

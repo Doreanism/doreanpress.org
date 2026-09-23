@@ -33,6 +33,8 @@ export interface Book {
   epubUrl?: string
   /** Optional retailer listing for print and Kindle editions. */
   amazonUrl?: string
+  /** Direct KDP author-copy ordering page, when known. */
+  authorCopiesUrl?: string
   featured?: boolean
 }
 
@@ -59,6 +61,7 @@ export const catalog: Book[] = [
     pdfUrl: 'https://simony.info/the-doctrine-of-simony.pdf',
     epubUrl: 'https://simony.info/the-doctrine-of-simony.epub',
     amazonUrl: 'https://www.amazon.com/dp/B0HKC6P7N6',
+    authorCopiesUrl: 'https://kdp.amazon.com/en_US/title-setup/paperback/4N2JZPVXPDT/author-orders?ref_=kdp_BS_D_ta_ao_main',
     featured: true
   }
 ]

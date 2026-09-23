@@ -14,7 +14,11 @@ const groups = computed(() => (orders.value?.outstanding || []).map((group) => {
       }
     }
   }
-  return { ...group, items: [...quantities].map(([slug, quantity]) => ({ slug, quantity })) }
+  return {
+    ...group,
+    editableRequest: group.requests.find(request => request.canEditAddress),
+    items: [...quantities].map(([slug, quantity]) => ({ slug, quantity }))
+  }
 }).filter(group => group.items.length))
 const copies = computed(() => groups.value.reduce((total, group) =>
   total + group.items.reduce((sum, item) => sum + item.quantity, 0), 0))
@@ -104,6 +108,14 @@ function label(request: { status: string, deliveryStatus?: string }) {
             {{ [group.address.line1, group.address.line2].filter(Boolean).join(', ') }}<br>
             {{ [group.address.city, group.address.state, group.address.postalCode].filter(Boolean).join(', ') }} · {{ group.address.country }}
           </address>
+          <RequestAddressEditor
+            v-if="editableMessages && group.editableRequest"
+            :request-id="group.editableRequest.id"
+            :name="group.name"
+            :address="group.address"
+            :alternatives="groups.filter(other => other.id !== group.id)"
+            :can-merge="group.requests.some(request => request.status === 'open')"
+          />
         </div>
         <div class="min-w-0 flex-1 sm:border-l sm:border-default sm:pl-6">
           <div
@@ -112,8 +124,9 @@ function label(request: { status: string, deliveryStatus?: string }) {
           >
             <div
               v-for="request in group.requests"
+              :id="editableMessages ? `request-${request.id}` : undefined"
               :key="request.id"
-              class="py-3 first:pt-0 last:pb-0"
+              class="scroll-mt-24 rounded-lg py-3 first:pt-0 last:pb-0 target:ring-2 target:ring-primary target:bg-primary/5"
             >
               <div class="flex flex-wrap items-start justify-between gap-2">
                 <div class="flex min-w-0 items-start gap-1">

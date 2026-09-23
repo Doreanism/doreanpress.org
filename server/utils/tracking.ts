@@ -63,6 +63,9 @@ export async function applyTrackingEvent(eventId: string, tracker: Tracker) {
       ON CONFLICT DO NOTHING RETURNING id
     ), changed AS (
       UPDATE book_requests SET fulfillment = fulfillment || jsonb_build_object('deliveryStatus', ${status}::text, 'deliveryUpdatedAt', ${tracker.updated_at}::text)
+        || CASE WHEN ${['in_transit', 'out_for_delivery', 'delivered', 'available_for_pickup', 'returned'].includes(status)}
+          THEN jsonb_build_object('shippedAt', COALESCE(fulfillment->>'shippedAt', ${tracker.updated_at}::text))
+          ELSE '{}'::jsonb END
       FROM previous WHERE book_requests.id = previous.id AND fulfillment->>'trackerId' = ${tracker.id} AND EXISTS(SELECT 1 FROM recorded)
         AND COALESCE((fulfillment->>'deliveryUpdatedAt')::timestamptz, '-infinity'::timestamptz) < ${tracker.updated_at}::timestamptz
       RETURNING book_requests.id, email, book_requests.account_id, previous.old_status

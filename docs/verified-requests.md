@@ -179,6 +179,19 @@ the route requests alongside `user.info.basic`. TikTok fails the whole
 authorisation for a scope the key has not been granted, so a production key only
 works once an app review has approved both.
 
+Facebook's app (*Dorean Press*, id `1762418461530400`) is **not yet published**
+as of 2026-09-22, and until it is, only people with a role on the app can prove
+a Facebook account — every other reader's sign-in is refused by Facebook. Login
+settings, legal URLs and the icon are all in place; the Publish button stays
+disabled with "not all requirements are complete". The likely cause is that
+`email` and `public_profile` still show 0 API calls on the use case page: an
+admin signed in through `/verify/facebook` that day, and Meta says test calls
+take up to 24 hours to register. Once they do, publish from the app's *Publish*
+page. If it is still blocked with calls counted, the remaining unchecked
+dashboard items are business verification and App Review, where both
+permissions sit as unsubmitted requests. Neither permission should need review.
+When the app is live, cut this paragraph down to a note that it is published.
+
 Most providers also give the date the account was opened, and that is carried
 (`accountCreatedAt`) and shown. It is worth less than it was — every account on
 the board from now on has been proved to be the reader's, so age is no longer

@@ -75,8 +75,8 @@ async function detach(identity: RequesterIdentity) {
   <UContainer class="py-12 sm:py-16">
     <UPageHeader
       :ui="{ title: 'font-display' }"
-      title="Emails & social profiles"
-      description="Manage the emails you use to sign in and receive updates, and the public profiles shown with your book requests."
+      title="Social profiles"
+      description="Manage the public profiles shown with your book requests."
     />
 
     <div
@@ -89,8 +89,6 @@ async function detach(identity: RequesterIdentity) {
       v-else
       class="mt-10 flex max-w-2xl flex-col gap-8"
     >
-      <AccountEmails />
-      <USeparator />
       <p
         v-if="error"
         role="alert"

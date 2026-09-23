@@ -2,6 +2,7 @@
 import RequestItemsEditor from '~/components/RequestItemsEditor.vue'
 
 const { signedIn } = useSignedIn()
+const route = useRoute()
 
 interface OrderLine {
   id: string
@@ -17,6 +18,17 @@ const { data: orders, refresh: refreshOrders } = await useOrders()
 const ungroupedRequests = computed(() => {
   const grouped = new Set(orders.value?.outstanding.flatMap(group => group.requests.map(request => request.id)) || [])
   return (orders.value?.requested || []).filter(request => !grouped.has(request.id))
+})
+
+async function revealLinkedRequest() {
+  if (!route.hash.startsWith('#request-')) return
+  await nextTick()
+  document.getElementById(route.hash.slice(1))?.scrollIntoView({ block: 'start' })
+}
+
+onMounted(() => {
+  revealLinkedRequest()
+  watch([() => route.hash, orders, signedIn], revealLinkedRequest, { flush: 'post' })
 })
 
 /** Plain English for a request's fulfilment state. */
@@ -79,8 +91,9 @@ function formatDate(iso: string) {
         <div
           v-for="line in ungroupedRequests"
           v-else
+          :id="`request-${line.id}`"
           :key="line.id"
-          class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-lg ring ring-default bg-default p-4"
+          class="flex scroll-mt-24 flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-lg ring ring-default bg-default p-4 target:ring-2 target:ring-primary target:bg-primary/5"
         >
           <div class="min-w-0">
             <div class="flex items-start gap-1">

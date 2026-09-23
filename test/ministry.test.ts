@@ -52,7 +52,46 @@ describe('tracking privacy and fulfillment', () => {
     const reopened = fulfillmentPatch({ ...ordered, ...done }, { action: 'tracking', trackingUrl: '' }, 'admin')
     expect(reopened.status).toBe('ordered')
     expect(reopened.fulfillment.recipientTrackingUrl).toBeUndefined()
-    expect(() => fulfillmentPatch(request, { action: 'tracking', trackingUrl: 'https://www.ups.com/track' }, 'admin')).toThrow()
+    expect(() => fulfillmentPatch({ ...request, status: 'open' }, { action: 'tracking', trackingUrl: 'https://www.ups.com/track' }, 'admin')).toThrow()
+  })
+  it('fulfills a funded order with just a tracking URL and reopens it when removed', () => {
+    const funded = { ...request, status: 'funded_awaiting_order' as const, fulfillment: {} }
+    const saved = fulfillmentPatch(funded, { action: 'tracking', trackingUrl: 'https://www.ups.com/track?tracknum=1Z123456789' }, 'admin')
+    expect(saved.status).toBe('done')
+    expect(saved.fulfillment.trackingSubmittedBy).toBe('admin')
+    expect(saved.fulfillment.amazonOrderNumber).toBeUndefined()
+    expect(fulfillmentPatch({ ...funded, ...saved }, { action: 'tracking', trackingUrl: '' }, 'admin').status).toBe('funded_awaiting_order')
+    expect(() => fulfillmentPatch({ ...funded, status: 'open' }, { action: 'tracking', trackingUrl: 'https://www.ups.com/track?tracknum=1Z123456789' }, 'admin')).toThrow()
+    expect(() => fulfillmentPatch(funded, { action: 'tracking', trackingUrl: 'javascript:alert(1)' }, 'admin')).toThrow()
+  })
+  it('records actual cost independently of tracking and permits a cost above the estimate', () => {
+    const saved = fulfillmentPatch(request, { action: 'cost', actualCents: 3105 }, 'admin')
+    expect(saved.status).toBe('funded_awaiting_order')
+    expect(saved.fulfillment.actualCents).toBe(3105)
+    const done = fulfillmentPatch({ ...request, ...saved }, { action: 'tracking', trackingUrl: 'https://www.ups.com/track?tracknum=1Z123456789' }, 'admin')
+    expect(done.fulfillment.actualCents).toBe(3105)
+    expect(fulfillmentPatch({ ...request, ...done }, { action: 'cost', actualCents: null }, 'admin').fulfillment.actualCents).toBeUndefined()
+    expect(fulfillmentPatch(request, { action: 'cost', actualCents: 0 }, 'admin').fulfillment.actualCents).toBe(0)
+    for (const actualCents of [-1, 10.5, NaN, Infinity, '1200']) {
+      expect(() => fulfillmentPatch(request, { action: 'cost', actualCents }, 'admin')).toThrow()
+    }
+  })
+  it('records a private purchase before tracking without exposing its link to readers or donors', () => {
+    const privateOrderUrl = 'https://www.amazon.com/gp/your-account/order-details?orderID=123-1234567-1234567'
+    const purchased = fulfillmentPatch(request, { action: 'purchase', actualCents: 941, privateOrderUrl }, 'admin')
+    expect(purchased).toMatchObject({ status: 'ordered', fulfillment: { privateOrderUrl, actualCents: 941, claimedBy: 'admin' } })
+    const order = { ...request, ...purchased }
+    expect(JSON.stringify(toMineView(order))).not.toContain('order-details')
+    expect(JSON.stringify(toGivenView(order))).not.toContain('order-details')
+    const updated = fulfillmentPatch(order, { action: 'purchase', actualCents: 950, privateOrderUrl }, 'admin')
+    expect(updated.fulfillment.actualCents).toBe(950)
+    expect(() => fulfillmentPatch(order, { action: 'purchase', actualCents: 950, privateOrderUrl }, 'other-admin')).toThrow()
+    for (const link of ['https://evil.test/order', 'javascript:alert(1)', 'https://www.amazon.com.evil.test/order']) {
+      expect(() => fulfillmentPatch(request, { action: 'purchase', actualCents: 941, privateOrderUrl: link }, 'admin')).toThrow()
+    }
+    const shipped = fulfillmentPatch(order, { action: 'tracking', trackingUrl: 'https://www.ups.com/track?tracknum=1Z123456789' }, 'admin')
+    expect(shipped.status).toBe('done')
+    expect(fulfillmentPatch({ ...order, ...shipped }, { action: 'tracking', trackingUrl: '' }, 'admin').status).toBe('ordered')
   })
   it('copies preview unless expressly authorized, with no donor data', () => {
     expect(() => agentInstructions({ ...request, status: 'done' }, true)).toThrow()

@@ -84,6 +84,37 @@ export function fulfillmentPatch(current: BookRequest, body: Record<string, unkn
   const f = { ...current.fulfillment }
   let status = current.status
   const action = body.action
+  if (action === 'cost' || action === 'tracking' || action === 'purchase') {
+    if (!['funded_awaiting_order', 'ordered', 'done', 'needs_attention'].includes(status)) throw createError({ statusCode: 409, statusMessage: 'Only funded orders can have fulfillment details recorded.' })
+    if (Object.hasOwn(body, 'actualCents')) {
+      if (body.actualCents === null) delete f.actualCents
+      else {
+        if (typeof body.actualCents !== 'number' || !Number.isSafeInteger(body.actualCents) || body.actualCents < 0) {
+          throw createError({ statusCode: 422, statusMessage: 'Enter a valid amount paid in USD, with no more than two decimal places.' })
+        }
+        f.actualCents = body.actualCents
+      }
+    }
+  }
+  if (action === 'purchase') {
+    if (f.claimedBy && f.claimedBy !== accountId) throw createError({ statusCode: 409, statusMessage: 'Another administrator has claimed this order.' })
+    let url: URL
+    try {
+      url = new URL(String(body.privateOrderUrl || ''))
+    } catch {
+      throw createError({ statusCode: 422, statusMessage: 'Enter the private Amazon order link.' })
+    }
+    if (url.protocol !== 'https:' || !url.hostname.startsWith('www.amazon.') || !Object.hasOwn(carrierHosts, url.hostname)
+      || url.username || url.password || (url.port && url.port !== '443') || url.href.length > 2000) {
+      throw createError({ statusCode: 422, statusMessage: 'Use an HTTPS Amazon order link.' })
+    }
+    if (f.actualCents == null) throw createError({ statusCode: 422, statusMessage: 'Enter the amount paid.' })
+    f.privateOrderUrl = url.href
+    f.claimedBy = accountId
+    f.claimedAt ||= new Date().toISOString()
+    return { status: f.trackingUrl ? 'done' : 'ordered', fulfillment: f }
+  }
+  if (action === 'cost') return { status, fulfillment: f }
   if (action === 'details') {
     const maximum = Number(body.maximumCents)
     if (!Number.isSafeInteger(maximum) || maximum <= 0 || maximum > 1000000) throw createError({ statusCode: 422, statusMessage: 'Enter a maximum spend in USD cents.' })
@@ -100,7 +131,7 @@ export function fulfillmentPatch(current: BookRequest, body: Record<string, unkn
     Object.assign(f, { amazonOrderNumber: orderNumber, actualCents: amount, estimatedDate: String(body.estimatedDate || '').slice(0, 100) })
     status = 'ordered'
   } else if (action === 'tracking') {
-    if (!f.amazonOrderNumber || !['ordered', 'done', 'needs_attention'].includes(status)) throw createError({ statusCode: 409, statusMessage: 'Record the Amazon order first.' })
+    if (!['funded_awaiting_order', 'ordered', 'done', 'needs_attention'].includes(status)) throw createError({ statusCode: 409, statusMessage: 'Only funded orders can receive tracking.' })
     if (!body.trackingUrl) {
       delete f.trackingUrl
       delete f.recipientTrackingUrl
@@ -108,7 +139,7 @@ export function fulfillmentPatch(current: BookRequest, body: Record<string, unkn
       delete f.carrier
       delete f.trackingNumber
       f.deliveryStatus = 'unknown'
-      status = 'ordered'
+      status = f.amazonOrderNumber || f.privateOrderUrl ? 'ordered' : 'funded_awaiting_order'
     } else {
       const tracking = parseTrackingUrl(body.trackingUrl)
       if (f.trackingNumber !== tracking.trackingNumber || f.carrier !== tracking.carrier) {

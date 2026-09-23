@@ -1,6 +1,6 @@
 export default defineEventHandler(async (event) => {
   const body = await readBody<Record<string, unknown>>(event)
-  const admin = await requireAdministrator(event, body.action !== 'visibility' && body.action !== 'claim')
+  const admin = await requireAdministrator(event)
   const id = getRouterParam(event, 'id') || ''
   const sql = db()
   if (body.action === 'visibility') {
@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
   }
   const request = await getRequest(id)
   if (!request) throw createError({ statusCode: 404, statusMessage: 'Order not found.' })
-  if (request.fulfillment?.claimedBy !== admin.accountId) throw createError({ statusCode: 409, statusMessage: 'Claim this task before changing fulfillment.' })
+  if (!['tracking', 'cost', 'purchase'].includes(String(body.action)) && request.fulfillment?.claimedBy !== admin.accountId) throw createError({ statusCode: 409, statusMessage: 'Claim this task before changing fulfillment.' })
   if (body.action === 'instructions' || body.action === 'address') {
     if (body.action === 'instructions' && body.authorize === true && Number(body.maximumCents) !== request.fulfillment?.maximumCents) {
       throw createError({ statusCode: 409, statusMessage: 'Save the displayed spending limit before authorizing a purchase.' })
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
     INSERT INTO ministry_outbox(id, recipient, subject, body)
     SELECT ${crypto.randomUUID()}, email, 'Your Dorean Press request',
       ${`Your request is ${next.status.replaceAll('_', ' ')}.${next.fulfillment.recipientTrackingUrl ? `\nTrack your parcel: ${next.fulfillment.recipientTrackingUrl}` : ''}\nView your request at ${useRuntimeConfig().public.siteUrl}/orders`}
-    FROM changed WHERE ${['ordered', 'tracking', 'needs_attention', 'cancelled'].includes(String(body.action))}
+    FROM changed WHERE ${['ordered', 'tracking', 'needs_attention', 'cancelled'].includes(String(body.action)) || (body.action === 'purchase' && request.status !== next.status)}
   ) SELECT id FROM changed`
   if (!rows.length) throw createError({ statusCode: 409, statusMessage: 'Task changed. Refresh before trying again.' })
   if (['tracking', 'carrier'].includes(String(body.action)) && next.fulfillment.trackingNumber) await registerRequestTracker(id)
