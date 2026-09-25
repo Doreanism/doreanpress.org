@@ -85,8 +85,11 @@ const updated = 'September 2026'
           Copyright
         </h2>
         <p>
-          Each book remains under the copyright and licence stated in that book. A printed purchase gives you the copy, not the copyright. A free digital edition may be shared only as its licence allows.
+          All books published by Dorean Press are dedicated to the public domain. You can copy, translate, modify, and distribute all resources, without restriction, and without needing to ask permission. All resource are freely given (Matt 10:8) for the sake of the gospel.
         </p>
+        <a href="https://freely.giving/free">
+          <img src="https://copy.church/badges/fg_standard_pde.svg">
+        </a>
       </section>
 
       <section class="space-y-4">
